@@ -24,6 +24,7 @@ type Api struct {
 	accessLogger *log.Logger
 	metrics      *httpMetrics
 	ready        bool
+	serverRunner func(*http.Server) error
 }
 
 func New() (*Api, error) {
@@ -37,6 +38,7 @@ func New() (*Api, error) {
 		payments:     handlers.NewPaymentsHandler(store, authorizer, func() time.Time { return time.Now().UTC() }, newPaymentID),
 		accessLogger: log.New(os.Stderr, "", 0),
 		metrics:      newHTTPMetrics(),
+		serverRunner: (*http.Server).ListenAndServe,
 	}
 	api.setupRouter()
 	return api, nil
@@ -49,6 +51,11 @@ func (a *Api) Run(ctx context.Context, addr string) error {
 		BaseContext: func(_ net.Listener) context.Context { return ctx },
 	}
 
+	runServer := a.serverRunner
+	if runServer == nil {
+		runServer = (*http.Server).ListenAndServe
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		<-ctx.Done()
@@ -56,7 +63,7 @@ func (a *Api) Run(ctx context.Context, addr string) error {
 	})
 	g.Go(func() error {
 		fmt.Printf("starting HTTP server on %s\n", addr)
-		err := httpServer.ListenAndServe()
+		err := runServer(httpServer)
 		if err != nil && err != http.ErrServerClosed {
 			return err
 		}

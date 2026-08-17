@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/models"
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
@@ -119,6 +122,93 @@ func TestAPIProbesAreLocalAndReturnAcceptedStatus(t *testing.T) {
 	}
 	if bankCalls != 0 {
 		t.Fatalf("bank calls = %d, want 0", bankCalls)
+	}
+}
+
+func TestAPIReadinessIsUnavailableBeforeRouterSetup(t *testing.T) {
+	response := httptest.NewRecorder()
+	(&Api{}).ReadinessHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestSafeStatusUsesFixedLabelForInvalidValues(t *testing.T) {
+	for _, status := range []int{0, 99, 600, -1} {
+		if got := safeStatus(status); got != "unknown" {
+			t.Errorf("safeStatus(%d) = %q, want %q", status, got, "unknown")
+		}
+	}
+}
+
+func TestNewUsesValidConfigurationAndRejectsInvalidTimeout(t *testing.T) {
+	t.Run("valid configuration", func(t *testing.T) {
+		t.Setenv("BANK_SIMULATOR_URL", "http://bank.test/payments")
+		t.Setenv("BANK_SIMULATOR_TIMEOUT", "250ms")
+
+		gateway, err := New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gateway.router == nil || gateway.payments == nil || !gateway.ready {
+			t.Fatalf("New() returned incomplete API: %+v", gateway)
+		}
+	})
+	t.Run("invalid timeout", func(t *testing.T) {
+		t.Setenv("BANK_SIMULATOR_TIMEOUT", "invalid")
+
+		if gateway, err := New(); err == nil || gateway != nil {
+			t.Fatalf("New() = (%v, %v), want (nil, error)", gateway, err)
+		}
+	})
+}
+
+func TestRunReturnsServerError(t *testing.T) {
+	wantErr := errors.New("listener failed")
+	gateway := &Api{
+		router: chi.NewRouter(),
+		serverRunner: func(server *http.Server) error {
+			if server.Addr != "unused" || server.Handler == nil || server.BaseContext == nil {
+				t.Fatalf("Run constructed unexpected server: %+v", server)
+			}
+			return wantErr
+		},
+	}
+
+	if err := gateway.Run(context.Background(), "unused"); !errors.Is(err, wantErr) {
+		t.Fatalf("Run() error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestRunShutsDownWhenContextIsCancelled(t *testing.T) {
+	started := make(chan struct{})
+	gateway := &Api{
+		router: chi.NewRouter(),
+		serverRunner: func(server *http.Server) error {
+			close(started)
+			<-server.BaseContext(nil).Done()
+			return http.ErrServerClosed
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	result := make(chan error, 1)
+	go func() { result <- gateway.Run(ctx, "unused") }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("server runner did not start")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("Run() error = %v, want nil after graceful shutdown", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not return after context cancellation")
 	}
 }
 
