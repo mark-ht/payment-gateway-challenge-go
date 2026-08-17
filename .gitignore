@@ -86,3 +86,6 @@ terraform.rc
 
 # Exclude internal Pi files
 .pi/*
+
+# Local planning artifacts used by Pi agents; not part of the submission.
+docs/plan/
