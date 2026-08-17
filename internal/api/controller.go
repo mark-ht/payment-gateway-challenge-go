@@ -28,7 +28,7 @@ func (a *Api) PingHandler() http.HandlerFunc {
 // HealthHandler reports local process and router availability.
 //
 //	@Summary	Gateway health probe
-//	@Description	Reports local process and router availability; it never calls the bank.
+//	@Description	Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.
 //	@Produce	json
 //	@Success	200	{object}	probeStatus
 //	@Router		/healthz [get]
@@ -41,7 +41,7 @@ func (a *Api) HealthHandler() http.HandlerFunc {
 // LivenessHandler reports whether this process should remain running.
 //
 //	@Summary	Gateway liveness probe
-//	@Description	Reports local process availability; it never calls the bank.
+//	@Description	Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.
 //	@Produce	json
 //	@Success	200	{object}	probeStatus
 //	@Router		/livez [get]
@@ -55,7 +55,7 @@ func (a *Api) LivenessHandler() http.HandlerFunc {
 // ReadinessHandler reports whether local API construction completed.
 //
 //	@Summary	Gateway readiness probe
-//	@Description	Reports completed local API construction only; it never calls the bank.
+//	@Description	Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.
 //	@Produce	json
 //	@Success	200	{object}	probeStatus
 //	@Failure	503	"Gateway not ready"
@@ -80,7 +80,7 @@ func writeProbeJSON(w http.ResponseWriter, status int, response any) {
 // MetricsHandler exposes the gateway's Prometheus metrics registry.
 //
 //	@Summary	Gateway Prometheus metrics
-//	@Description	Prometheus text exposition for private production scraping only. It excludes /metrics from HTTP request metrics.
+//	@Description	Prometheus text exposition served unauthenticated by this process. Production ingress and network policy must enforce private Prometheus-only scraping rather than public access. It excludes /metrics from HTTP request metrics.
 //	@Produce	plain
 //	@Success	200	{string}	string
 //	@Router		/metrics [get]

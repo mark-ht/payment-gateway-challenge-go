@@ -88,7 +88,7 @@ A known ID returns `200 OK` and the same safe completed-payment representation. 
 
 ## Operational Probes
 
-`/ping` remains the existing compatibility endpoint and returns `200 {"message":"pong"}`. The unauthenticated probe endpoints are local-only and never contact the bank:
+`/ping` remains the existing compatibility endpoint and returns `200 {"message":"pong"}`. The unauthenticated probe endpoints perform local dependency checks only and never contact the bank:
 
 | Endpoint | Success response | Semantics |
 |---|---|---|
@@ -96,7 +96,7 @@ A known ID returns `200 OK` and the same safe completed-payment representation. 
 | `GET /livez` | `200 {"status":"ok"}` | The process is live and should not be restarted because of downstream bank availability. |
 | `GET /readyz` | `200 {"status":"ready"}` | Local API construction has completed. It does not test the bank, which has no card-free health operation. |
 
-A Kubernetes deployment can use the local probes without making bank availability a restart or traffic-admission condition:
+Here, “local” describes the dependency check, not network exposure: this application does not bind the endpoints to loopback or authorize callers. Production ingress and network policy must prevent public routing and permit only the Kubernetes probe traffic that needs them. A Kubernetes deployment can use the probes without making bank availability a restart or traffic-admission condition:
 
 ```yaml
 livenessProbe:
@@ -107,7 +107,7 @@ readinessProbe:
 
 ## Metrics
 
-`GET /metrics` exposes a dedicated, non-global Prometheus registry. Production must restrict this endpoint to private networking or ingress scraping; the assessment does not add authentication or deployment manifests. It provides this simple baseline for future production observability:
+`GET /metrics` exposes a dedicated, non-global Prometheus registry. The application serves it without authentication; production ingress and network policy must enforce private Prometheus-only scraping rather than public routing. The assessment does not add that deployment enforcement, authentication, or deployment manifests. It provides this simple baseline for future production observability:
 
 - `payment_gateway_http_requests_total` counter and `payment_gateway_http_request_duration_seconds` histogram, labelled only with normalized allow-listed `method`, server-known matched `route` template (or the fixed `unmatched` value), and final `status`.
 - `payment_gateway_http_in_flight_requests`, an unlabeled gauge.
@@ -118,7 +118,7 @@ Dashboards define the service error rate as `5xx` responses divided by all obser
 
 ## Payment Flow
 
-1. The handler decodes exactly one JSON object, rejects malformed/non-object/trailing input, and ignores unknown fields without requiring a request `Content-Type` header. It does not impose an unquantified body-size limit.
+1. The handler decodes exactly one JSON object, rejects malformed/non-object/trailing input, and ignores unknown fields without requiring a request `Content-Type` header. Merchant request bodies are limited to 64 KiB; an excess body is rejected before a bank call or persistence.
 2. Validation normalizes the currency and validates every merchant field.
 3. The gateway generates an opaque ID before submitting the valid request for bank authorization.
 4. Only a valid request is translated to the simulator request shape and sent using the request context.

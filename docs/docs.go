@@ -92,7 +92,7 @@ const docTemplate = `{
         },
         "/healthz": {
             "get": {
-                "description": "Reports local process and router availability; it never calls the bank.",
+                "description": "Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.",
                 "produces": [
                     "application/json"
                 ],
@@ -109,7 +109,7 @@ const docTemplate = `{
         },
         "/livez": {
             "get": {
-                "description": "Reports local process availability; it never calls the bank.",
+                "description": "Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.",
                 "produces": [
                     "application/json"
                 ],
@@ -126,7 +126,7 @@ const docTemplate = `{
         },
         "/metrics": {
             "get": {
-                "description": "Prometheus text exposition for private production scraping only. It excludes /metrics from HTTP request metrics.",
+                "description": "Prometheus text exposition served unauthenticated by this process. Production ingress and network policy must enforce private Prometheus-only scraping rather than public access. It excludes /metrics from HTTP request metrics.",
                 "produces": [
                     "text/plain"
                 ],
@@ -143,7 +143,7 @@ const docTemplate = `{
         },
         "/readyz": {
             "get": {
-                "description": "Reports completed local API construction only; it never calls the bank.",
+                "description": "Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.",
                 "produces": [
                     "application/json"
                 ],
