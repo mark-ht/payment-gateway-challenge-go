@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/bank"
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/models"
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/repository"
 	"github.com/go-chi/chi/v5"
@@ -167,6 +168,25 @@ func TestPostPaymentHandlerRejectsOversizedBodyBeforeBankCall(t *testing.T) {
 	}
 	if _, found := store.Get("payment-id"); found {
 		t.Fatal("oversized request was stored")
+	}
+}
+
+func TestPostPaymentHandlerDoesNotStoreOversizedBankResponse(t *testing.T) {
+	bankServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"authorized":true,"padding":"` + strings.Repeat("x", 64*1024) + `"}`))
+	}))
+	defer bankServer.Close()
+
+	store := repository.NewPaymentsRepository()
+	handler := NewPaymentsHandler(store, bank.NewClient(bankServer.URL, time.Second), func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
+	recorder := httptest.NewRecorder()
+	handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123"}`)))
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", recorder.Code)
+	}
+	if _, found := store.Get("payment-id"); found {
+		t.Fatal("oversized bank response was stored")
 	}
 }
 

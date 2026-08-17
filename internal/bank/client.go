@@ -12,6 +12,8 @@ import (
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/models"
 )
 
+const maxBankResponseBytes = 64 * 1024
+
 type Client struct {
 	url        string
 	httpClient *http.Client
@@ -62,10 +64,19 @@ func (c *Client) Authorize(ctx context.Context, payment models.PaymentRequest) (
 		return false, fmt.Errorf("unexpected bank status: %d", response.StatusCode)
 	}
 
+	// Read only one byte beyond the limit so a bank response cannot exhaust gateway resources.
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxBankResponseBytes+1))
+	if err != nil {
+		return false, err
+	}
+	if len(responseBody) > maxBankResponseBytes {
+		return false, fmt.Errorf("bank response exceeds size limit")
+	}
+
 	var result struct {
 		Authorized *bool `json:"authorized"`
 	}
-	decoder := json.NewDecoder(response.Body)
+	decoder := json.NewDecoder(bytes.NewReader(responseBody))
 	if err := decoder.Decode(&result); err != nil || result.Authorized == nil {
 		return false, fmt.Errorf("invalid bank response")
 	}

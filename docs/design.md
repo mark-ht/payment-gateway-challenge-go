@@ -137,6 +137,14 @@ The bank client is configurable without source changes:
 
 The configured timeout is applied to every bank request in addition to request-context cancellation.
 
+### Resource Bounds
+
+Merchant request bodies are limited to 64 KiB. An excess body is rejected with `413 Payload Too Large` and `status: "Rejected"` before any bank call or persistence. Bank response bodies are likewise limited to 64 KiB; an excess response is unusable and follows the generic `503` path. These limits bound resource use while remaining far above the small payment and simulator JSON payloads.
+
+### Production Transport and Origin Policy
+
+The assessment keeps its local HTTP simulator default. In production, the configured bank endpoint must require HTTPS and match an approved-host allowlist before PAN/CVV is forwarded. CORS is a separate browser-origin control for the public gateway; it does not enforce the server-to-bank endpoint, HTTPS, or host allowlist. If browser clients are supported, configure CORS with explicit approved origins in addition to—not instead of—bank-boundary transport controls.
+
 ## Data Safety
 
 - Full PAN and CVV are strings only while validating and sending the simulator request.
