@@ -139,6 +139,7 @@ The configured timeout is applied to every bank request in addition to request-c
 
 - Full PAN and CVV are strings only while validating and sending the simulator request.
 - Never persist, return, or log the full PAN or CVV.
+- The API does not install request logging, because attacker-controlled request URIs can contain payment data.
 - Persist only payment ID, status, last four digits as a string, expiry month/year, normalized currency, and amount.
 - Do not return or persist the simulator authorization code without a new accepted decision.
 

@@ -13,7 +13,6 @@ import (
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/handlers"
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/repository"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -59,7 +58,7 @@ func (a *Api) Run(ctx context.Context, addr string) error {
 
 func (a *Api) setupRouter() {
 	a.router = chi.NewRouter()
-	a.router.Use(middleware.Logger)
+	// Request URI logging is prohibited because attacker-controlled query strings may contain payment data.
 	a.router.Get("/ping", a.PingHandler())
 	a.router.Get("/swagger/*", a.SwaggerHandler())
 	a.router.Post("/api/payments", a.payments.PostHandler())

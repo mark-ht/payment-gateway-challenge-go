@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/models"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 func paymentRequestJSON(t *testing.T, cardNumber string) string {
@@ -19,6 +20,27 @@ func paymentRequestJSON(t *testing.T, cardNumber string) string {
 		t.Fatal(err)
 	}
 	return string(body)
+}
+
+func TestAPIDoesNotInstallRequestLogger(t *testing.T) {
+	originalLogger := middleware.DefaultLogger
+	defer func() { middleware.DefaultLogger = originalLogger }()
+
+	var loggedURI string
+	middleware.DefaultLogger = func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			loggedURI = r.RequestURI
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	gateway := &Api{}
+	gateway.setupRouter()
+	gateway.router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/ping?untrusted=value", nil))
+
+	if loggedURI != "" {
+		t.Fatalf("request logger received URI %q", loggedURI)
+	}
 }
 
 func TestAPIProcessesAndRetrievesPayment(t *testing.T) {
