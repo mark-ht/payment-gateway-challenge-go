@@ -1,5 +1,10 @@
 basePath: /
 definitions:
+  api.probeStatus:
+    properties:
+      status:
+        type: string
+    type: object
   handlers.rejectedResponse:
     properties:
       status:
@@ -93,6 +98,43 @@ paths:
         "404":
           description: Payment not found
       summary: Retrieve a payment
+  /healthz:
+    get:
+      description: Reports local process and router availability; it never calls the
+        bank.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.probeStatus'
+      summary: Gateway health probe
+  /livez:
+    get:
+      description: Reports local process availability; it never calls the bank.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.probeStatus'
+      summary: Gateway liveness probe
+  /readyz:
+    get:
+      description: Reports completed local API construction only; it never calls the
+        bank.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.probeStatus'
+        "503":
+          description: Gateway not ready
+      summary: Gateway readiness probe
 securityDefinitions:
   BasicAuth:
     type: basic

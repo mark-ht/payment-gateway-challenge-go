@@ -82,9 +82,71 @@
                     }
                 }
             }
+        },
+        "/healthz": {
+            "get": {
+                "description": "Reports local process and router availability; it never calls the bank.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Gateway health probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.probeStatus"
+                        }
+                    }
+                }
+            }
+        },
+        "/livez": {
+            "get": {
+                "description": "Reports local process availability; it never calls the bank.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Gateway liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.probeStatus"
+                        }
+                    }
+                }
+            }
+        },
+        "/readyz": {
+            "get": {
+                "description": "Reports completed local API construction only; it never calls the bank.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Gateway readiness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.probeStatus"
+                        }
+                    },
+                    "503": {
+                        "description": "Gateway not ready"
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "api.probeStatus": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.rejectedResponse": {
             "type": "object",
             "properties": {

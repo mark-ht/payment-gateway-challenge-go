@@ -84,6 +84,44 @@ func TestAPIDoesNotInstallRequestLogger(t *testing.T) {
 	}
 }
 
+func TestAPIProbesAreLocalAndReturnAcceptedStatus(t *testing.T) {
+	bankCalls := 0
+	bankServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bankCalls++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bankServer.Close()
+	t.Setenv("BANK_SIMULATOR_URL", bankServer.URL+"/payments")
+
+	gateway, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		path string
+		body string
+	}{
+		{path: "/healthz", body: `{"status":"ok"}` + "\n"},
+		{path: "/livez", body: `{"status":"ok"}` + "\n"},
+		{path: "/readyz", body: `{"status":"ready"}` + "\n"},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			gateway.router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+			}
+			if response.Body.String() != test.body {
+				t.Fatalf("body = %q, want %q", response.Body.String(), test.body)
+			}
+		})
+	}
+	if bankCalls != 0 {
+		t.Fatalf("bank calls = %d, want 0", bankCalls)
+	}
+}
+
 func TestAPIProcessesAndRetrievesPayment(t *testing.T) {
 	bank := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/payments" {

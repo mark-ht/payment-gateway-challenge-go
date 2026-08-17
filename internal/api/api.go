@@ -22,6 +22,7 @@ type Api struct {
 	router       *chi.Mux
 	payments     *handlers.PaymentsHandler
 	accessLogger *log.Logger
+	ready        bool
 }
 
 func New() (*Api, error) {
@@ -69,9 +70,13 @@ func (a *Api) setupRouter() {
 	a.router = chi.NewRouter()
 	a.router.Use(a.accessLog)
 	a.router.Get("/ping", a.PingHandler())
+	a.router.Get("/healthz", a.HealthHandler())
+	a.router.Get("/livez", a.LivenessHandler())
+	a.router.Get("/readyz", a.ReadinessHandler())
 	a.router.Get("/swagger/*", a.SwaggerHandler())
 	a.router.Post("/api/payments", a.payments.PostHandler())
 	a.router.Get("/api/payments/{id}", a.payments.GetHandler())
+	a.ready = true
 }
 
 func (a *Api) accessLog(next http.Handler) http.Handler {

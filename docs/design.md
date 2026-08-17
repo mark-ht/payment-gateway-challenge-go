@@ -86,6 +86,25 @@ GET /api/payments/{id}
 
 A known ID returns `200 OK` and the same safe completed-payment representation. An unknown ID returns `404 Not Found`; it is not a payment-status value and has no additional public error-code contract.
 
+## Operational Probes
+
+`/ping` remains the existing compatibility endpoint and returns `200 {"message":"pong"}`. The unauthenticated probe endpoints are local-only and never contact the bank:
+
+| Endpoint | Success response | Semantics |
+|---|---|---|
+| `GET /healthz` | `200 {"status":"ok"}` | Local process and router are available. |
+| `GET /livez` | `200 {"status":"ok"}` | The process is live and should not be restarted because of downstream bank availability. |
+| `GET /readyz` | `200 {"status":"ready"}` | Local API construction has completed. It does not test the bank, which has no card-free health operation. |
+
+A Kubernetes deployment can use the local probes without making bank availability a restart or traffic-admission condition:
+
+```yaml
+livenessProbe:
+  httpGet: { path: /livez, port: 8090 }
+readinessProbe:
+  httpGet: { path: /readyz, port: 8090 }
+```
+
 ## Payment Flow
 
 1. The handler decodes exactly one JSON object, rejects malformed/non-object/trailing input, and ignores unknown fields without requiring a request `Content-Type` header. It does not impose an unquantified body-size limit.
