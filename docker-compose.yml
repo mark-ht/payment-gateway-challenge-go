@@ -24,6 +24,10 @@ services:
     build:
       context: .
       target: gateway
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        APP_COMMIT: ${APP_COMMIT:-none}
+        APP_DATE: ${APP_DATE:-unknown}
     environment:
       BANK_SIMULATOR_URL: http://bank_simulator:8080/payments
     depends_on:

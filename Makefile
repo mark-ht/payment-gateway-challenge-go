@@ -1,7 +1,13 @@
-.PHONY: help test e2e
+APP_VERSION ?= dev
+APP_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || printf '%s' none)
+APP_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '%s' unknown)
+
+export APP_VERSION APP_COMMIT APP_DATE
+
+.PHONY: help test e2e metadata-check
 
 help:
-	@printf '%s\n' 'Targets:' '  test  Run Go tests with aggregate statement coverage.' '  e2e   Run the Compose end-to-end smoke check with cleanup.'
+	@printf '%s\n' 'Targets:' '  test            Run Go tests with aggregate statement coverage.' '  e2e             Run the Compose end-to-end smoke check with cleanup.' '  metadata-check  Verify explicit build metadata overrides in the gateway image.'
 
 test:
 	@set -e; \
@@ -17,3 +23,6 @@ e2e:
 	trap 'exit 130' INT; \
 	trap 'exit 143' TERM; \
 	docker compose --profile e2e up --build --abort-on-container-exit --exit-code-from e2e
+
+metadata-check:
+	@./test/metadata/build-metadata.sh
