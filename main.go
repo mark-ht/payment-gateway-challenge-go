@@ -54,8 +54,11 @@ func run() error {
 		}
 	}()
 
-	api := api.New()
-	if err := api.Run(ctx, ":8090"); err != nil {
+	server, err := api.New()
+	if err != nil {
+		return err
+	}
+	if err := server.Run(ctx, ":8090"); err != nil {
 		return err
 	}
 
