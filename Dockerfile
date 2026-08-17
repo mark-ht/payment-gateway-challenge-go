@@ -14,6 +14,13 @@ RUN CGO_ENABLED=0 GOOS=linux go test -c -tags=e2e -trimpath -ldflags="-s -w" -o 
 
 FROM gcr.io/distroless/static-debian12:nonroot AS gateway
 
+ARG APP_VERSION
+ARG APP_COMMIT
+ARG APP_DATE
+ENV APP_VERSION=${APP_VERSION} \
+    APP_COMMIT=${APP_COMMIT} \
+    APP_DATE=${APP_DATE}
+
 COPY --from=builder --chown=nonroot:nonroot /out/gateway /gateway
 
 USER nonroot:nonroot

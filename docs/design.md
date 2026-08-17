@@ -183,7 +183,7 @@ The configured timeout is applied to every bank request in addition to request-c
 
 ### Compose Deployment and E2E
 
-The multi-stage `Dockerfile` builds the gateway with Go 1.21 as a static binary, then runs it on port 8090 in the non-root distroless runtime image. Compose configures its bank URL as `http://bank_simulator:8080/payments` and gates startup on an internal Mountebank-admin health check; Mountebank admin port 2525 is never published. A profile-gated, separately compiled standard-library E2E runner connects through service DNS and bounded-polls `/readyz` before exercising the composed API. It is not part of `go test ./...`.
+The multi-stage `Dockerfile` builds the gateway with Go 1.21 as a static binary, then runs it on port 8090 in the non-root distroless runtime image. Its `APP_VERSION`, `APP_COMMIT`, and `APP_DATE` build arguments are passed to that image as runtime environment variables. At startup the gateway logs those deployment metadata values, defaults empty or unset values to `dev`, `none`, and `unknown`, and uses the resolved version in Swagger. Compose configures its bank URL as `http://bank_simulator:8080/payments` and gates startup on an internal Mountebank-admin health check; Mountebank admin port 2525 is never published. A profile-gated, separately compiled standard-library E2E runner connects through service DNS and bounded-polls `/readyz` before exercising the composed API. It is not part of `go test ./...`.
 
 The current Compose configuration retains only loopback simulator port 8080 for the local `go run .` workflow and does not publish gateway port 8090.
 

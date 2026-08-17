@@ -17,6 +17,18 @@ The simulator payment port is loopback-only at `localhost:8080`; its Mountebank 
 docker compose down
 ```
 
+## Build metadata
+
+At startup the gateway logs `APP_VERSION`, `APP_COMMIT`, and `APP_DATE`, and uses `APP_VERSION` for the Swagger version. Unset or empty values use the non-sensitive defaults `dev`, `none`, and `unknown` respectively. The gateway image accepts matching build arguments and makes them available at runtime:
+
+```bash
+docker build \
+  --build-arg APP_VERSION=v1.2.3 \
+  --build-arg APP_COMMIT=abc123 \
+  --build-arg APP_DATE=2026-04-02T00:00:00Z \
+  -t payment-gateway .
+```
+
 ## Tests
 
 Normal Go tests are deterministic and Docker-free. Run them with aggregate statement coverage:
