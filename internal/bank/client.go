@@ -73,16 +73,40 @@ func (c *Client) Authorize(ctx context.Context, payment models.PaymentRequest) (
 		return false, fmt.Errorf("bank response exceeds size limit")
 	}
 
-	var result struct {
-		Authorized *bool `json:"authorized"`
-	}
 	decoder := json.NewDecoder(bytes.NewReader(responseBody))
-	if err := decoder.Decode(&result); err != nil || result.Authorized == nil {
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return false, fmt.Errorf("invalid bank response")
+	}
+
+	var authorized *bool
+	for decoder.More() {
+		token, err := decoder.Token()
+		name, ok := token.(string)
+		if err != nil || !ok {
+			return false, fmt.Errorf("invalid bank response")
+		}
+		if name != "authorized" {
+			var ignored json.RawMessage
+			if err := decoder.Decode(&ignored); err != nil {
+				return false, fmt.Errorf("invalid bank response")
+			}
+			continue
+		}
+		// Reject ambiguity rather than letting a later value override the bank decision.
+		if authorized != nil {
+			return false, fmt.Errorf("invalid bank response")
+		}
+		if err := decoder.Decode(&authorized); err != nil || authorized == nil {
+			return false, fmt.Errorf("invalid bank response")
+		}
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || authorized == nil {
 		return false, fmt.Errorf("invalid bank response")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return false, fmt.Errorf("invalid bank response")
 	}
-	return *result.Authorized, nil
+	return *authorized, nil
 }

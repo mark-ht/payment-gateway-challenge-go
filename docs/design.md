@@ -124,7 +124,7 @@ The internal bank request is:
 | `200` with `authorized: false` | Persist and return `Declined`. |
 | `503` | Return gateway `503`; do not persist. |
 | `3xx` redirect | Do not follow the redirect; return gateway `503` without forwarding the payment request; do not persist. |
-| Network error, timeout, malformed/unexpected response | Return gateway `503`; do not persist. |
+| Network error, timeout, malformed/unexpected response (including duplicate `authorized` fields) | Return gateway `503`; do not persist. |
 
 ### Bank Configuration
 

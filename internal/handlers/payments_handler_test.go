@@ -190,6 +190,32 @@ func TestPostPaymentHandlerDoesNotStoreOversizedBankResponse(t *testing.T) {
 	}
 }
 
+func TestPostPaymentHandlerRejectsDuplicateBankAuthorizationFields(t *testing.T) {
+	for _, response := range []string{
+		`{"authorized":true,"authorized":false}`,
+		`{"authorized":false,"authorized":true}`,
+	} {
+		t.Run(response, func(t *testing.T) {
+			bankServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(response))
+			}))
+			defer bankServer.Close()
+
+			store := repository.NewPaymentsRepository()
+			handler := NewPaymentsHandler(store, bank.NewClient(bankServer.URL, time.Second), func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
+			recorder := httptest.NewRecorder()
+			handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123"}`)))
+
+			if recorder.Code != http.StatusServiceUnavailable || recorder.Body.Len() != 0 {
+				t.Fatalf("status/body length = %d/%d, want 503/0", recorder.Code, recorder.Body.Len())
+			}
+			if _, found := store.Get("payment-id"); found {
+				t.Fatal("duplicate authorization response was stored")
+			}
+		})
+	}
+}
+
 func TestPostPaymentHandlerDoesNotStoreBankFailures(t *testing.T) {
 	store := repository.NewPaymentsRepository()
 	bank := &fakeAuthorizer{err: errors.New("bank unavailable")}
