@@ -19,24 +19,23 @@ docker compose down
 
 ## Tests
 
-Normal Go tests are deterministic and Docker-free:
+Normal Go tests are deterministic and Docker-free. Run them with aggregate statement coverage:
 
 ```bash
-go test ./...
+make test
+```
+
+For the additional submission checks, run:
+
+```bash
 go vet ./...
 go test -race ./...
 ```
 
-The optional composed E2E smoke check builds a non-root, static distroless gateway image, starts it with the simulator, and runs the tagged compiled E2E runner over the Compose network:
+The optional composed E2E smoke check builds a non-root, static distroless gateway image, starts it with the simulator, and runs the tagged compiled E2E runner over the Compose network. It always removes the E2E containers and network afterwards, including after a failed run:
 
 ```bash
-docker compose --profile e2e up --build --abort-on-container-exit --exit-code-from e2e
-```
-
-Always remove the E2E containers and network afterwards, including after a failed run:
-
-```bash
-docker compose --profile e2e down --remove-orphans
+make e2e
 ```
 
 The E2E runner waits for the gateway's internal `http://gateway:8090/readyz` endpoint with a bounded retry. It does not publish the gateway or Mountebank admin ports to the host.
