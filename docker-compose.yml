@@ -1,15 +1,57 @@
-version: "3.8"
-
 services:
   bank_simulator:
-    container_name: bank_simulator
     image: bbyars/mountebank:2.8.1
     ports:
-      - "2525:2525"
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     command: --configfile /imposters/bank_simulator.ejs --allowInjection
     volumes:
       - type: bind
         source: ./imposters
         target: /imposters
-      
+        read_only: true
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get('http://localhost:2525/imposters', r =>
+          process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 2s
+
+  gateway:
+    build:
+      context: .
+      target: gateway
+    environment:
+      BANK_SIMULATOR_URL: http://bank_simulator:8080/payments
+    depends_on:
+      bank_simulator:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  e2e:
+    profiles:
+      - e2e
+    build:
+      context: .
+      target: e2e
+    environment:
+      E2E_GATEWAY_URL: http://gateway:8090
+    depends_on:
+      gateway:
+        condition: service_started
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
