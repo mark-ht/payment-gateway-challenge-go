@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -65,10 +66,26 @@ func TestGatewayScenarios(t *testing.T) {
 
 	declined := postPayment(t, client, gatewayURL, fixtures.Declined, http.StatusOK)
 	assertSafePayment(t, declined, "Declined", fixtures.Declined)
+	declinedRetrieved := getPayment(t, client, gatewayURL, declined.ID, http.StatusOK)
+	assertSafePayment(t, declinedRetrieved, "Declined", fixtures.Declined)
+	if declinedRetrieved != declined {
+		t.Fatal("retrieved declined payment differs from completed payment")
+	}
 
 	postRaw(t, client, gatewayURL, []byte(`{}`), http.StatusBadRequest, true)
+	postRejected(t, client, gatewayURL, []byte(`{"card_number":`), http.StatusBadRequest)
+	trailingPayment, err := json.Marshal(fixtures.Authorized)
+	if err != nil {
+		t.Fatal("encode trailing payment")
+	}
+	postRejected(t, client, gatewayURL, append(trailingPayment, []byte(` {}`)...), http.StatusBadRequest)
+	postRejected(t, client, gatewayURL, oversizedJSONBody(), http.StatusRequestEntityTooLarge)
 	postPayment(t, client, gatewayURL, fixtures.Unavailable, http.StatusServiceUnavailable)
 	getPayment(t, client, gatewayURL, "unknown-payment-id", http.StatusNotFound)
+
+	assertProbeOK(t, client, gatewayURL, "/healthz")
+	assertProbeOK(t, client, gatewayURL, "/livez")
+	assertSafeMetrics(t, client, gatewayURL, "gateway_e2e_query_sentinel", fixtures.Authorized)
 }
 
 func gatewayURL() string {
@@ -94,6 +111,13 @@ func waitForReady(t *testing.T, client *http.Client, gatewayURL string) {
 	t.Fatal("gateway did not become ready before timeout")
 }
 
+func oversizedJSONBody() []byte {
+	body := make([]byte, 0, 64*1024+len(`{"ignored":""}`))
+	body = append(body, `{"ignored":"`...)
+	body = append(body, bytes.Repeat([]byte("x"), 64*1024)...)
+	return append(body, `"}`...)
+}
+
 func postPayment(t *testing.T, client *http.Client, gatewayURL string, fixture paymentFixture, wantStatus int) paymentResponse {
 	t.Helper()
 	body, err := json.Marshal(fixture)
@@ -101,6 +125,11 @@ func postPayment(t *testing.T, client *http.Client, gatewayURL string, fixture p
 		t.Fatal("encode payment fixture")
 	}
 	return postRaw(t, client, gatewayURL, body, wantStatus, false)
+}
+
+func postRejected(t *testing.T, client *http.Client, gatewayURL string, body []byte, wantStatus int) {
+	t.Helper()
+	postRaw(t, client, gatewayURL, body, wantStatus, true)
 }
 
 func postRaw(t *testing.T, client *http.Client, gatewayURL string, body []byte, wantStatus int, wantRejected bool) paymentResponse {
@@ -179,6 +208,62 @@ func decodeSafePayment(t *testing.T, body io.Reader) paymentResponse {
 		t.Fatal("decode safe payment fields")
 	}
 	return payment
+}
+
+func assertProbeOK(t *testing.T, client *http.Client, gatewayURL, path string) {
+	t.Helper()
+	response, err := client.Get(gatewayURL + path)
+	if err != nil {
+		t.Fatal("request probe")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatal("probe did not return OK")
+	}
+	if response.Header.Get("Content-Type") != "application/json" {
+		t.Fatal("probe did not return JSON")
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1024))
+	if err != nil {
+		t.Fatal("read probe response")
+	}
+	if string(body) != "{\"status\":\"ok\"}\n" {
+		t.Fatal("probe did not return exact success response")
+	}
+}
+
+func assertSafeMetrics(t *testing.T, client *http.Client, gatewayURL, querySentinel string, fixture paymentFixture) {
+	t.Helper()
+	response, err := client.Get(gatewayURL + "/metrics?probe=" + url.QueryEscape(querySentinel))
+	if err != nil {
+		t.Fatal("request metrics")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatal("metrics did not return OK")
+	}
+	if !strings.HasPrefix(response.Header.Get("Content-Type"), "text/plain") {
+		t.Fatal("metrics did not return Prometheus text")
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 64*1024+1))
+	if err != nil {
+		t.Fatal("read metrics response")
+	}
+	if len(body) > 64*1024 {
+		t.Fatal("metrics output exceeded safe bound")
+	}
+	metrics := string(body)
+	if !strings.Contains(metrics, "payment_gateway_http_requests_total{method=\"POST\",route=\"/api/payments\",status=\"200\"} 2") {
+		t.Fatal("metrics missing expected bounded payment request count")
+	}
+	if strings.Contains(metrics, "route=\"/metrics\"") {
+		t.Fatal("metrics scrape was included in request metrics")
+	}
+	for _, value := range []string{querySentinel, fixture.CardNumber, fixture.CVV} {
+		if strings.Contains(metrics, value) {
+			t.Fatal("metrics exposed a raw request value")
+		}
+	}
 }
 
 func assertSafePayment(t *testing.T, payment paymentResponse, wantStatus string, fixture paymentFixture) {

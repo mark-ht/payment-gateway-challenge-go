@@ -50,4 +50,4 @@ The optional composed E2E smoke check builds a non-root, static distroless gatew
 make e2e
 ```
 
-The E2E runner waits for the gateway's internal `http://gateway:8090/readyz` endpoint with a bounded retry. It does not publish the gateway or Mountebank admin ports to the host.
+The E2E runner waits for the gateway's internal `http://gateway:8090/readyz` endpoint with a bounded retry. It covers authorized and declined payment retrieval, malformed/trailing and oversized-request rejection, unavailable and unknown-payment handling, exact health/liveness probe responses, and safe bounded Prometheus metrics. It does not publish the gateway or Mountebank admin ports to the host.
