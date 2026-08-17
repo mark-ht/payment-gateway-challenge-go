@@ -3,8 +3,11 @@ package bank
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +115,122 @@ func TestClientReturnsNetworkFailures(t *testing.T) {
 	if err == nil {
 		t.Fatal("Authorize() error = nil, want network failure")
 	}
+}
+
+func TestNewClientConfiguresTimeoutAndRefusesRedirects(t *testing.T) {
+	client := NewClient("http://bank.test/payments", 250*time.Millisecond)
+	if client.httpClient.Timeout != 250*time.Millisecond {
+		t.Fatalf("timeout = %s, want %s", client.httpClient.Timeout, 250*time.Millisecond)
+	}
+	if err := client.httpClient.CheckRedirect(httptest.NewRequest(http.MethodGet, "http://redirect.test", nil), nil); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatalf("CheckRedirect() error = %v, want %v", err, http.ErrUseLastResponse)
+	}
+}
+
+func TestClientRefusesRedirectWithoutContactingTarget(t *testing.T) {
+	redirected := 0
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		redirected++
+	}))
+	defer target.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", target.URL)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+
+	_, err := NewClient(origin.URL, time.Second).Authorize(context.Background(), testPaymentRequest())
+	if err == nil {
+		t.Fatal("Authorize() error = nil, want redirect response error")
+	}
+	if redirected != 0 {
+		t.Fatalf("redirect target calls = %d, want 0", redirected)
+	}
+}
+
+func TestClientReturnsRequestAndTransportErrors(t *testing.T) {
+	t.Run("invalid configured URL", func(t *testing.T) {
+		_, err := NewClient("://invalid", time.Second).Authorize(context.Background(), testPaymentRequest())
+		if err == nil {
+			t.Fatal("Authorize() error = nil, want request-construction error")
+		}
+	})
+	t.Run("transport failure", func(t *testing.T) {
+		client := NewClient("http://bank.test/payments", time.Second)
+		client.httpClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("transport failure")
+		})
+
+		_, err := client.Authorize(context.Background(), testPaymentRequest())
+		if err == nil {
+			t.Fatal("Authorize() error = nil, want transport error")
+		}
+	})
+	t.Run("cancelled context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		client := NewClient("http://bank.test/payments", time.Second)
+		client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			return nil, request.Context().Err()
+		})
+
+		_, err := client.Authorize(ctx, testPaymentRequest())
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Authorize() error = %v, want context cancellation", err)
+		}
+	})
+}
+
+type errorReadCloser struct{}
+
+func (errorReadCloser) Read([]byte) (int, error) {
+	return 0, errors.New("body read failure")
+}
+
+func (errorReadCloser) Close() error { return nil }
+
+func TestClientReturnsBodyReadErrors(t *testing.T) {
+	client := NewClient("http://bank.test/payments", time.Second)
+	client.httpClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: errorReadCloser{}, Header: make(http.Header)}, nil
+	})
+
+	_, err := client.Authorize(context.Background(), testPaymentRequest())
+	if err == nil {
+		t.Fatal("Authorize() error = nil, want body-read error")
+	}
+}
+
+func TestClientRejectsUnusableBankResponses(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "non-object", body: `[]`},
+		{name: "missing authorized", body: `{}`},
+		{name: "null authorized", body: `{"authorized":null}`},
+		{name: "string authorized", body: `{"authorized":"yes"}`},
+		{name: "numeric authorized", body: `{"authorized":1}`},
+		{name: "object authorized", body: `{"authorized":{}}`},
+		{name: "trailing JSON", body: `{"authorized":true} false`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := NewClient("http://bank.test/payments", time.Second)
+			client.httpClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(test.body)), Header: make(http.Header)}, nil
+			})
+
+			_, err := client.Authorize(context.Background(), testPaymentRequest())
+			if err == nil {
+				t.Fatal("Authorize() error = nil, want unusable bank-response error")
+			}
+		})
+	}
+}
+
+func testPaymentRequest() models.PaymentRequest {
+	return models.PaymentRequest{CardNumber: "00000000000001", ExpiryMonth: 4, ExpiryYear: 2030, Currency: "GBP", Amount: 100, CVV: "123"}
 }
 
 func TestClientAuthorizesUsingSimulatorContract(t *testing.T) {
