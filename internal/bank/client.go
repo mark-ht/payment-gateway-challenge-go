@@ -18,7 +18,16 @@ type Client struct {
 }
 
 func NewClient(url string, timeout time.Duration) *Client {
-	return &Client{url: url, httpClient: &http.Client{Timeout: timeout}}
+	return &Client{
+		url: url,
+		httpClient: &http.Client{
+			Timeout: timeout,
+			// Refuse redirects so a 307 or 308 cannot replay payment data to another host.
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+	}
 }
 
 func (c *Client) Authorize(ctx context.Context, payment models.PaymentRequest) (bool, error) {

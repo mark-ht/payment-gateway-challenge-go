@@ -98,7 +98,7 @@ Keep the implementation small and testable:
 
 - **HTTP handler:** HTTP decoding/encoding, status selection, and request-context propagation.
 - **Validation:** merchant-request validation and normalization before any bank call.
-- **Bank client:** an interface-backed adapter that formats `expiry_date` as `MM/YYYY`, calls the simulator, applies a bounded HTTP timeout, and maps its response.
+- **Bank client:** an interface-backed adapter that formats `expiry_date` as `MM/YYYY`, calls the simulator using a bounded HTTP timeout, refuses redirects, and maps its response.
 - **Repository:** concurrent-safe in-memory add/get operations over sanitized completed-payment records.
 
 A separate service layer is optional, not required. Introduce it only if it makes these boundaries clearer.
@@ -122,6 +122,7 @@ The internal bank request is:
 | `200` with `authorized: true` | Persist and return `Authorized`. |
 | `200` with `authorized: false` | Persist and return `Declined`. |
 | `503` | Return gateway `503`; do not persist. |
+| `3xx` redirect | Do not follow the redirect; return gateway `503` without forwarding the payment request; do not persist. |
 | Network error, timeout, malformed/unexpected response | Return gateway `503`; do not persist. |
 
 ### Bank Configuration

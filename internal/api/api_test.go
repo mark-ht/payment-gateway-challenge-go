@@ -173,6 +173,40 @@ func TestAPIMapsDeclinesAndUnavailableBank(t *testing.T) {
 	}
 }
 
+func TestAPIRejectsBankRedirectsWithoutFollowingThem(t *testing.T) {
+	for _, redirectStatus := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		t.Run(http.StatusText(redirectStatus), func(t *testing.T) {
+			redirectTargetRequests := 0
+			redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				redirectTargetRequests++
+				_, _ = w.Write([]byte(`{"authorized":true}`))
+			}))
+			defer redirectTarget.Close()
+
+			bank := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Location", redirectTarget.URL)
+				w.WriteHeader(redirectStatus)
+			}))
+			defer bank.Close()
+			t.Setenv("BANK_SIMULATOR_URL", bank.URL+"/payments")
+			t.Setenv("BANK_SIMULATOR_TIMEOUT", "1s")
+			gateway, err := New()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			recorder := httptest.NewRecorder()
+			gateway.router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(paymentRequestJSON(t, "00000000000001"))))
+			if recorder.Code != http.StatusServiceUnavailable {
+				t.Errorf("status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+			}
+			if redirectTargetRequests != 0 {
+				t.Errorf("redirect target received %d requests, want 0", redirectTargetRequests)
+			}
+		})
+	}
+}
+
 func TestAPIRejectsNonObjectAndTrailingJSONWithoutBankCall(t *testing.T) {
 	for _, test := range []struct {
 		name string
