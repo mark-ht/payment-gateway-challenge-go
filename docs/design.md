@@ -11,7 +11,21 @@ The gateway has two merchant-facing capabilities:
 1. Process a card payment through the acquiring-bank simulator.
 2. Retrieve the safe details of a completed payment by ID.
 
-It deliberately does not implement a real database, merchant authentication, refunds, capture, settlement, idempotency, or real acquiring-bank integration. The supplied in-memory repository is sufficient for this assessment.
+It deliberately does not implement durable database storage, merchant authentication/authorization, rate limiting, caching, refunds, capture, settlement, idempotency, or real acquiring-bank integration. The supplied in-memory repository is sufficient for this assessment.
+
+## Considered Production Concerns Outside Scope
+
+### Caller authentication and authorization
+
+The assessment trusts callers and has no merchant identity or authorization model. A production gateway must authenticate and authorize each caller before payment processing. The mechanism depends on the client boundary: JWT/OAuth-style credentials are appropriate for delegated or browser-facing clients, while mTLS is a strong option for managed service-to-service or merchant connections. Credential rotation, issuer/audience validation, merchant-scoped authorization, and audit controls would be part of that design.
+
+### Rate limiting
+
+No request throttling is implemented. A production gateway should enforce limits at an API gateway and/or application layer using authenticated merchant identity, with carefully chosen per-merchant and abuse-protection limits. A shared distributed limiter is needed for horizontally scaled instances; an in-memory per-process limiter would be inconsistent and is not added here.
+
+### Caching and durable storage
+
+The in-memory repository is intentionally ephemeral: payment retrieval is limited to one process lifetime and instance. Production requires durable, highly available storage with appropriate transactional/concurrency semantics, encryption and access controls, retention policies, backups, and observability. Any cache should contain only safe payment representations or short-lived lookup metadata—never PAN or CVV—and must have clear invalidation and consistency rules. Caching is not needed for the assessment's in-memory workflow.
 
 ## Accepted Design Considerations and Assumptions
 
