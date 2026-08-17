@@ -154,6 +154,35 @@ func TestPostPaymentHandlerRejectsInvalidInputBeforeBankCall(t *testing.T) {
 	}
 }
 
+func TestPostPaymentHandlerRejectsNonIntegerJSONAmountBeforeBankCall(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+	}{
+		{"fractional", `{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100.5,"cvv":"123"}`},
+		{"string", `{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":"100","cvv":"123"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := repository.NewPaymentsRepository()
+			bank := &fakeAuthorizer{authorized: true}
+			handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
+
+			recorder := httptest.NewRecorder()
+			handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(test.body)))
+
+			if recorder.Code != http.StatusBadRequest || recorder.Body.String() != "{\"status\":\"Rejected\"}\n" {
+				t.Fatalf("status/body = %d/%q, want 400/rejected", recorder.Code, recorder.Body.String())
+			}
+			if bank.calls != 0 {
+				t.Fatalf("bank calls = %d, want 0", bank.calls)
+			}
+			if _, found := store.Get("payment-id"); found {
+				t.Fatal("non-integer amount was stored")
+			}
+		})
+	}
+}
+
 func TestPostPaymentHandlerRejectsOversizedBodyBeforeBankCall(t *testing.T) {
 	store := repository.NewPaymentsRepository()
 	bank := &fakeAuthorizer{authorized: true}
