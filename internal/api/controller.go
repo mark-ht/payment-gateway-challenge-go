@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/cko-recruitment/payment-gateway-challenge-go/docs"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
@@ -74,6 +75,17 @@ func writeProbeJSON(w http.ResponseWriter, status int, response any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// MetricsHandler exposes the gateway's Prometheus metrics registry.
+//
+//	@Summary	Gateway Prometheus metrics
+//	@Description	Prometheus text exposition for private production scraping only. It excludes /metrics from HTTP request metrics.
+//	@Produce	plain
+//	@Success	200	{string}	string
+//	@Router		/metrics [get]
+func (a *Api) MetricsHandler() http.HandlerFunc {
+	return promhttp.HandlerFor(a.metrics.registry, promhttp.HandlerOpts{}).ServeHTTP
 }
 
 // SwaggerHandler returns an http.HandlerFunc that handles HTTP Swagger related requests.

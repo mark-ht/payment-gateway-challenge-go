@@ -122,6 +122,135 @@ func TestAPIProbesAreLocalAndReturnAcceptedStatus(t *testing.T) {
 	}
 }
 
+func TestAPIMetricsUseSafeBoundedLabelsAndExcludeMetricsEndpoint(t *testing.T) {
+	bankServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer bankServer.Close()
+	t.Setenv("BANK_SIMULATOR_URL", bankServer.URL+"/payments")
+
+	gateway, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pingRequest := httptest.NewRequest(http.MethodGet, "/ping?raw-query-sentinel", nil)
+	pingRequest.Header.Set("X-Header-Sentinel", "header-sentinel")
+	pingRequest.Header.Set("X-Correlation-ID", "correlation-sentinel")
+	gateway.router.ServeHTTP(httptest.NewRecorder(), pingRequest)
+	gateway.router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/payments/payment-id-sentinel", nil))
+
+	expiry := time.Now().UTC().AddDate(0, 1, 0)
+	paymentBody, err := json.Marshal(models.PaymentRequest{
+		CardNumber: "00000000000001", ExpiryMonth: int(expiry.Month()), ExpiryYear: expiry.Year(), Currency: "GBP", Amount: 100, CVV: "987",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway.router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/payments", bytes.NewReader(paymentBody)))
+	gateway.router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("method-sentinel", "/ping", nil))
+
+	metricsResponse := httptest.NewRecorder()
+	gateway.router.ServeHTTP(metricsResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if metricsResponse.Code != http.StatusOK {
+		t.Fatalf("metrics status = %d, want %d", metricsResponse.Code, http.StatusOK)
+	}
+	metrics := metricsResponse.Body.String()
+
+	for _, expected := range []string{
+		`payment_gateway_http_requests_total{method="GET",route="/ping",status="200"} 1`,
+		`payment_gateway_http_requests_total{method="GET",route="/api/payments/{id}",status="404"} 1`,
+		`payment_gateway_http_requests_total{method="POST",route="/api/payments",status="503"} 1`,
+		`payment_gateway_http_requests_total{method="OTHER",route="unmatched",status="405"} 1`,
+	} {
+		if !strings.Contains(metrics, expected) {
+			t.Errorf("metrics missing %q:\n%s", expected, metrics)
+		}
+	}
+	for _, sentinel := range []string{"payment-id-sentinel", "raw-query-sentinel", "00000000000001", "987", "header-sentinel", "correlation-sentinel", "method-sentinel"} {
+		if strings.Contains(metrics, sentinel) {
+			t.Errorf("metrics contain prohibited value %q:\n%s", sentinel, metrics)
+		}
+	}
+	if strings.Contains(metrics, `route="/metrics"`) {
+		t.Errorf("metrics endpoint must be excluded from HTTP metrics:\n%s", metrics)
+	}
+	assertMetricLabelsAreSafe(t, metrics)
+}
+
+func TestAPIMetricsTracksInFlightRequests(t *testing.T) {
+	bankStarted := make(chan struct{})
+	releaseBank := make(chan struct{})
+	bankServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(bankStarted)
+		<-releaseBank
+		_, _ = w.Write([]byte(`{"authorized":true}`))
+	}))
+	defer bankServer.Close()
+	t.Setenv("BANK_SIMULATOR_URL", bankServer.URL+"/payments")
+
+	gateway, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paymentRequest := paymentRequestJSON(t, "00000000000001")
+	requestDone := make(chan struct{})
+	go func() {
+		defer close(requestDone)
+		gateway.router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(paymentRequest)))
+	}()
+	<-bankStarted
+
+	metricsResponse := httptest.NewRecorder()
+	gateway.router.ServeHTTP(metricsResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(metricsResponse.Body.String(), "payment_gateway_http_in_flight_requests 1") {
+		t.Fatalf("in-flight metric missing active request:\n%s", metricsResponse.Body.String())
+	}
+	close(releaseBank)
+	<-requestDone
+}
+
+func assertMetricLabelsAreSafe(t *testing.T, metrics string) {
+	t.Helper()
+	allowedMethods := map[string]bool{"GET": true, "POST": true, "OTHER": true}
+	allowedRoutes := map[string]bool{"/ping": true, "/api/payments": true, "/api/payments/{id}": true, "unmatched": true}
+	allowedStatuses := map[string]bool{"200": true, "404": true, "405": true, "503": true}
+	for _, line := range strings.Split(metrics, "\n") {
+		if !strings.HasPrefix(line, "payment_gateway_http_requests_total{") && !strings.HasPrefix(line, "payment_gateway_http_request_duration_seconds_") {
+			continue
+		}
+		start, end := strings.IndexByte(line, '{'), strings.LastIndexByte(line, '}')
+		if start < 0 || end < start {
+			continue
+		}
+		for _, label := range strings.Split(line[start+1:end], ",") {
+			name, value, found := strings.Cut(label, "=")
+			value = strings.Trim(value, "\"")
+			if !found {
+				t.Errorf("malformed metric label %q in %q", label, line)
+				continue
+			}
+			switch name {
+			case "method":
+				if !allowedMethods[value] {
+					t.Errorf("unsafe method label %q in %q", value, line)
+				}
+			case "route":
+				if !allowedRoutes[value] {
+					t.Errorf("unsafe route label %q in %q", value, line)
+				}
+			case "status":
+				if !allowedStatuses[value] {
+					t.Errorf("unexpected final status label %q in %q", value, line)
+				}
+			case "le":
+			default:
+				t.Errorf("unexpected metric label %q in %q", label, line)
+			}
+		}
+	}
+}
+
 func TestAPIProcessesAndRetrievesPayment(t *testing.T) {
 	bank := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/payments" {

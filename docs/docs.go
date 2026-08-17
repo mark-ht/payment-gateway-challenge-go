@@ -124,6 +124,23 @@ const docTemplate = `{
                 }
             }
         },
+        "/metrics": {
+            "get": {
+                "description": "Prometheus text exposition for private production scraping only. It excludes /metrics from HTTP request metrics.",
+                "produces": [
+                    "text/plain"
+                ],
+                "summary": "Gateway Prometheus metrics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/readyz": {
             "get": {
                 "description": "Reports completed local API construction only; it never calls the bank.",

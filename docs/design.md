@@ -105,6 +105,17 @@ readinessProbe:
   httpGet: { path: /readyz, port: 8090 }
 ```
 
+## Metrics
+
+`GET /metrics` exposes a dedicated, non-global Prometheus registry. Production must restrict this endpoint to private networking or ingress scraping; the assessment does not add authentication or deployment manifests. It provides this simple baseline for future production observability:
+
+- `payment_gateway_http_requests_total` counter and `payment_gateway_http_request_duration_seconds` histogram, labelled only with normalized allow-listed `method`, server-known matched `route` template (or the fixed `unmatched` value), and final `status`.
+- `payment_gateway_http_in_flight_requests`, an unlabeled gauge.
+
+The `/metrics` scrape endpoint is excluded from the HTTP request counter, duration histogram, and in-flight gauge so scrapes do not distort service telemetry. Metrics share only the access logger's selected safe operational fields: normalized method, server-known route, and response status; they never include raw paths/query strings, headers, bodies, payment IDs, PAN, CVV, or correlation IDs.
+
+Dashboards define the service error rate as `5xx` responses divided by all observed responses. `4xx` responses remain separately observable merchant/request rejection traffic rather than service errors.
+
 ## Payment Flow
 
 1. The handler decodes exactly one JSON object, rejects malformed/non-object/trailing input, and ignores unknown fields without requiring a request `Content-Type` header. It does not impose an unquantified body-size limit.
