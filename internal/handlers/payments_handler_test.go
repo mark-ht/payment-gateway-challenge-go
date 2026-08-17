@@ -259,6 +259,66 @@ func TestPostPaymentHandlerDoesNotStoreBankFailures(t *testing.T) {
 	}
 }
 
+func TestDeclinedPaymentResponsesHaveExactSafeFields(t *testing.T) {
+	store := repository.NewPaymentsRepository()
+	handler := NewPaymentsHandler(store, &fakeAuthorizer{authorized: false}, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
+	router := chi.NewRouter()
+	router.Post("/api/payments", handler.PostHandler())
+	router.Get("/api/payments/{id}", handler.GetHandler())
+
+	postRecorder := httptest.NewRecorder()
+	router.ServeHTTP(postRecorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000002","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123"}`)))
+	if postRecorder.Code != http.StatusOK {
+		t.Fatalf("POST status = %d, want 200", postRecorder.Code)
+	}
+	postResponse := decodeRawJSONObject(t, postRecorder.Body.Bytes())
+	assertSafePaymentFields(t, postResponse)
+	if string(postResponse["status"]) != `"Declined"` {
+		t.Fatalf("POST status = %s, want Declined", postResponse["status"])
+	}
+
+	getRecorder := httptest.NewRecorder()
+	router.ServeHTTP(getRecorder, httptest.NewRequest(http.MethodGet, "/api/payments/payment-id", nil))
+	if getRecorder.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", getRecorder.Code)
+	}
+	getResponse := decodeRawJSONObject(t, getRecorder.Body.Bytes())
+	assertSafePaymentFields(t, getResponse)
+	if string(getResponse["status"]) != `"Declined"` {
+		t.Fatalf("GET status = %s, want Declined", getResponse["status"])
+	}
+}
+
+func decodeRawJSONObject(t *testing.T, body []byte) map[string]json.RawMessage {
+	t.Helper()
+	var response map[string]json.RawMessage
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
+func assertSafePaymentFields(t *testing.T, response map[string]json.RawMessage) {
+	t.Helper()
+	required := map[string]struct{}{
+		"id":                    {},
+		"status":                {},
+		"card_number_last_four": {},
+		"expiry_month":          {},
+		"expiry_year":           {},
+		"currency":              {},
+		"amount":                {},
+	}
+	if len(response) != len(required) {
+		t.Fatalf("response fields = %v, want exactly %v", response, required)
+	}
+	for field := range required {
+		if _, found := response[field]; !found {
+			t.Errorf("response is missing required safe field %q", field)
+		}
+	}
+}
+
 func TestPostPaymentHandlerReturnsDeclined(t *testing.T) {
 	store := repository.NewPaymentsRepository()
 	bank := &fakeAuthorizer{authorized: false}
