@@ -139,7 +139,7 @@ The configured timeout is applied to every bank request in addition to request-c
 
 - Full PAN and CVV are strings only while validating and sending the simulator request.
 - Never persist, return, or log the full PAN or CVV.
-- Per-request access logs contain only the HTTP method, server-known matched route pattern, response status, elapsed duration, and a server-generated correlation ID. They never include raw URIs/query strings, headers, bodies, card data, remote addresses, user agents, or client-supplied correlation IDs.
+- Per-request access logs contain only an allow-listed standard HTTP method name (or the fixed `OTHER` marker), server-known matched route pattern, response status, elapsed duration, and a server-generated correlation ID. They never include raw method tokens, URIs/query strings, headers, bodies, card data, remote addresses, user agents, or client-supplied correlation IDs.
 - Persist only payment ID, status, last four digits as a string, expiry month/year, normalized currency, and amount.
 - Do not return or persist the simulator authorization code without a new accepted decision.
 

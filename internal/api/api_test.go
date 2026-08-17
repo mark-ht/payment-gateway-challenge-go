@@ -46,6 +46,23 @@ func TestAPIAccessLogIncludesOnlySafeOperationalFields(t *testing.T) {
 	}
 }
 
+func TestAPIAccessLogDoesNotIncludeUnsupportedMethodToken(t *testing.T) {
+	const methodSentinel = "4242424242424242"
+
+	var logs bytes.Buffer
+	gateway := &Api{accessLogger: log.New(&logs, "", 0)}
+	gateway.setupRouter()
+	gateway.router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(methodSentinel, "/ping", nil))
+
+	entry := logs.String()
+	if strings.Contains(entry, methodSentinel) {
+		t.Fatalf("access log contains unsupported method token: %q", entry)
+	}
+	if !strings.Contains(entry, "method=OTHER ") {
+		t.Fatalf("access log = %q, want fixed unsupported-method marker", entry)
+	}
+}
+
 func TestAPIDoesNotInstallRequestLogger(t *testing.T) {
 	originalLogger := middleware.DefaultLogger
 	defer func() { middleware.DefaultLogger = originalLogger }()

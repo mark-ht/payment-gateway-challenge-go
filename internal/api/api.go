@@ -85,8 +85,18 @@ func (a *Api) accessLog(next http.Handler) http.Handler {
 		next.ServeHTTP(response, r)
 
 		// Log only selected server-derived fields so request data cannot expose payment details.
-		a.accessLogger.Printf("method=%s route=%s status=%d duration=%s correlation_id=%s", r.Method, chi.RouteContext(r.Context()).RoutePattern(), response.status, time.Since(start), correlationID)
+		a.accessLogger.Printf("method=%s route=%s status=%d duration=%s correlation_id=%s", safeMethod(r.Method), chi.RouteContext(r.Context()).RoutePattern(), response.status, time.Since(start), correlationID)
 	})
+}
+
+func safeMethod(method string) string {
+	switch method {
+	case http.MethodConnect, http.MethodDelete, http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPatch, http.MethodPost, http.MethodPut, http.MethodTrace:
+		return method
+	default:
+		// Method tokens are client-controlled, so unknown values must not enter access logs.
+		return "OTHER"
+	}
 }
 
 type statusResponseWriter struct {
