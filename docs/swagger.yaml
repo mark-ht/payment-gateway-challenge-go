@@ -8,6 +8,8 @@ definitions:
   handlers.rejectedResponse:
     properties:
       status:
+        enum:
+        - Rejected
         type: string
     type: object
   models.Payment:
@@ -17,6 +19,10 @@ definitions:
       card_number_last_four:
         type: string
       currency:
+        enum:
+        - GBP
+        - USD
+        - EUR
         type: string
       expiry_month:
         type: integer
@@ -25,22 +31,49 @@ definitions:
       id:
         type: string
       status:
+        enum:
+        - Authorized
+        - Declined
         type: string
     type: object
   models.PaymentRequest:
     properties:
       amount:
+        minimum: 1
         type: integer
       card_number:
+        maxLength: 19
+        minLength: 14
         type: string
+        x-pattern: ^[0-9]+$
       currency:
+        description: Currency uses canonical supported values; input is normalized
+          to uppercase before validation.
+        enum:
+        - GBP
+        - USD
+        - EUR
         type: string
       cvv:
+        maxLength: 4
+        minLength: 3
         type: string
+        x-pattern: ^[0-9]+$
       expiry_month:
+        description: ExpiryMonth must be from 1 through 12 and, with ExpiryYear, be
+          strictly after the current UTC month.
+        maximum: 12
+        minimum: 1
         type: integer
       expiry_year:
         type: integer
+    required:
+    - amount
+    - card_number
+    - currency
+    - cvv
+    - expiry_month
+    - expiry_year
     type: object
 host: localhost:8090
 info:

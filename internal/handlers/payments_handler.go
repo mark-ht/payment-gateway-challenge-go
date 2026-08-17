@@ -115,7 +115,7 @@ func (h *PaymentsHandler) PostHandler() http.HandlerFunc {
 }
 
 type rejectedResponse struct {
-	Status string `json:"status"`
+	Status string `json:"status" enums:"Rejected"`
 }
 
 func writeRejected(w http.ResponseWriter) {

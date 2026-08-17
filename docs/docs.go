@@ -175,7 +175,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "Rejected"
+                    ]
                 }
             }
         },
@@ -189,7 +192,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "currency": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "GBP",
+                        "USD",
+                        "EUR"
+                    ]
                 },
                 "expiry_month": {
                     "type": "integer"
@@ -201,27 +209,55 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "Authorized",
+                        "Declined"
+                    ]
                 }
             }
         },
         "models.PaymentRequest": {
             "type": "object",
+            "required": [
+                "amount",
+                "card_number",
+                "currency",
+                "cvv",
+                "expiry_month",
+                "expiry_year"
+            ],
             "properties": {
                 "amount": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "card_number": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 19,
+                    "minLength": 14,
+                    "x-pattern": "^[0-9]+$"
                 },
                 "currency": {
-                    "type": "string"
+                    "description": "Currency uses canonical supported values; input is normalized to uppercase before validation.",
+                    "type": "string",
+                    "enum": [
+                        "GBP",
+                        "USD",
+                        "EUR"
+                    ]
                 },
                 "cvv": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 4,
+                    "minLength": 3,
+                    "x-pattern": "^[0-9]+$"
                 },
                 "expiry_month": {
-                    "type": "integer"
+                    "description": "ExpiryMonth must be from 1 through 12 and, with ExpiryYear, be strictly after the current UTC month.",
+                    "type": "integer",
+                    "maximum": 12,
+                    "minimum": 1
                 },
                 "expiry_year": {
                     "type": "integer"
