@@ -5,8 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/bank"
@@ -17,9 +20,12 @@ import (
 )
 
 type Api struct {
-	router   *chi.Mux
-	payments *handlers.PaymentsHandler
+	router       *chi.Mux
+	payments     *handlers.PaymentsHandler
+	accessLogger *log.Logger
 }
+
+var accessLogSequence atomic.Uint64
 
 func New() (*Api, error) {
 	config, err := loadConfig()
@@ -28,7 +34,10 @@ func New() (*Api, error) {
 	}
 	store := repository.NewPaymentsRepository()
 	authorizer := bank.NewClient(config.bankURL, config.bankTimeout)
-	api := &Api{payments: handlers.NewPaymentsHandler(store, authorizer, func() time.Time { return time.Now().UTC() }, newPaymentID)}
+	api := &Api{
+		payments:     handlers.NewPaymentsHandler(store, authorizer, func() time.Time { return time.Now().UTC() }, newPaymentID),
+		accessLogger: log.New(os.Stderr, "", 0),
+	}
 	api.setupRouter()
 	return api, nil
 }
@@ -57,12 +66,45 @@ func (a *Api) Run(ctx context.Context, addr string) error {
 }
 
 func (a *Api) setupRouter() {
+	if a.accessLogger == nil {
+		a.accessLogger = log.New(os.Stderr, "", 0)
+	}
 	a.router = chi.NewRouter()
-	// Request URI logging is prohibited because attacker-controlled query strings may contain payment data.
+	a.router.Use(a.accessLog)
 	a.router.Get("/ping", a.PingHandler())
 	a.router.Get("/swagger/*", a.SwaggerHandler())
 	a.router.Post("/api/payments", a.payments.PostHandler())
 	a.router.Get("/api/payments/{id}", a.payments.GetHandler())
+}
+
+func (a *Api) accessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		correlationID := newCorrelationID()
+		response := &statusResponseWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(response, r)
+
+		// Log only selected server-derived fields so request data cannot expose payment details.
+		a.accessLogger.Printf("method=%s route=%s status=%d duration=%s correlation_id=%s", r.Method, chi.RouteContext(r.Context()).RoutePattern(), response.status, time.Since(start), correlationID)
+	})
+}
+
+type statusResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func newCorrelationID() string {
+	id, err := newPaymentID()
+	if err == nil {
+		return id
+	}
+	return fmt.Sprintf("fallback-%d", accessLogSequence.Add(1))
 }
 
 func newPaymentID() (string, error) {

@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +23,27 @@ func paymentRequestJSON(t *testing.T, cardNumber string) string {
 		t.Fatal(err)
 	}
 	return string(body)
+}
+
+func TestAPIAccessLogIncludesOnlySafeOperationalFields(t *testing.T) {
+	var logs bytes.Buffer
+	gateway := &Api{accessLogger: log.New(&logs, "", 0)}
+	gateway.setupRouter()
+
+	request := httptest.NewRequest(http.MethodGet, "/ping?query-sentinel", strings.NewReader("body-sentinel"))
+	request.Header.Set("X-Sentinel", "header-sentinel")
+	request.Header.Set("X-Correlation-ID", "client-correlation-sentinel")
+	gateway.router.ServeHTTP(httptest.NewRecorder(), request)
+
+	entry := logs.String()
+	for _, sentinel := range []string{"query-sentinel", "body-sentinel", "header-sentinel", "client-correlation-sentinel"} {
+		if strings.Contains(entry, sentinel) {
+			t.Errorf("access log contains prohibited value %q: %q", sentinel, entry)
+		}
+	}
+	if !regexp.MustCompile(`^method=GET route=/ping status=200 duration=[0-9.]+(?:ns|µs|ms|s) correlation_id=[0-9a-f]{32}\n$`).MatchString(entry) {
+		t.Errorf("access log = %q, want only safe operational fields", entry)
+	}
 }
 
 func TestAPIDoesNotInstallRequestLogger(t *testing.T) {
