@@ -18,7 +18,7 @@ type Authorizer interface {
 	Authorize(context.Context, models.PaymentRequest) (bool, error)
 }
 
-type IDGenerator func() (string, error)
+type IDGenerator func() string
 type Clock func() time.Time
 
 type PaymentsHandler struct {
@@ -81,14 +81,11 @@ func (h *PaymentsHandler) PostHandler() http.HandlerFunc {
 			writeRejected(w)
 			return
 		}
+		// Generate before authorization so every completed bank decision has a local ID.
+		id := h.newID()
 		authorized, err := h.authorizer.Authorize(r.Context(), request)
 		if err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		id, err := h.newID()
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		status := "Declined"
@@ -104,7 +101,10 @@ func (h *PaymentsHandler) PostHandler() http.HandlerFunc {
 			Currency:           request.Currency,
 			Amount:             request.Amount,
 		}
-		h.storage.Add(payment)
+		for !h.storage.Create(payment) {
+			// Retry a collision so an existing completed payment is never overwritten.
+			payment.ID = h.newID()
+		}
 		writeJSON(w, http.StatusOK, payment)
 	}
 }

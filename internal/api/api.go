@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/bank"
@@ -24,8 +23,6 @@ type Api struct {
 	payments     *handlers.PaymentsHandler
 	accessLogger *log.Logger
 }
-
-var accessLogSequence atomic.Uint64
 
 func New() (*Api, error) {
 	config, err := loadConfig()
@@ -110,17 +107,11 @@ func (w *statusResponseWriter) WriteHeader(status int) {
 }
 
 func newCorrelationID() string {
-	id, err := newPaymentID()
-	if err == nil {
-		return id
-	}
-	return fmt.Sprintf("fallback-%d", accessLogSequence.Add(1))
+	return newPaymentID()
 }
 
-func newPaymentID() (string, error) {
+func newPaymentID() string {
 	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
 }

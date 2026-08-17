@@ -34,8 +34,3 @@ func (r *PaymentsRepository) Create(payment models.Payment) bool {
 	r.payments[payment.ID] = payment
 	return true
 }
-
-// Add is retained for compatibility; new callers should use Create to detect collisions.
-func (r *PaymentsRepository) Add(payment models.Payment) {
-	r.Create(payment)
-}

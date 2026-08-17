@@ -19,7 +19,7 @@ It deliberately does not implement a real database, merchant authentication, ref
 - A valid bank decision is a completed payment: it is persisted and has status `Authorized` or `Declined`. Invalid merchant input is `Rejected` before a bank request; bank unavailability is not a payment outcome and is not persisted.
 - `400` represents invalid/malformed merchant input, `404` an unknown payment ID, and `503` an unavailable or unusable bank response.
 - Currency input is normalized to uppercase and restricted to `GBP`, `USD`, and `EUR`; the amount is a positive integer in minor units.
-- A payment ID is an opaque collision-resistant value. Only safe payment data is retained in the in-memory repository.
+- A payment ID is an opaque collision-resistant value generated before bank authorization. Completed payments are atomically created by ID; an existing ID is never overwritten and causes a fresh-ID retry. Only safe payment data is retained in the in-memory repository.
 - The implementation remains deliberately small: handler, validation, bank-client, and repository responsibilities are separated only to make the required behaviour testable and maintainable.
 
 ## Public HTTP API
@@ -76,10 +76,11 @@ A known ID returns `200 OK` and the same safe completed-payment representation. 
 
 1. The handler decodes exactly one JSON object, rejects malformed/non-object/trailing input, and ignores unknown fields without requiring a request `Content-Type` header. It does not impose an unquantified body-size limit.
 2. Validation normalizes the currency and validates every merchant field.
-3. Only a valid request is translated to the simulator request shape and sent using the request context.
-4. The bank client maps `authorized: true` to `Authorized` and `authorized: false` to `Declined`.
-5. For either completed outcome, the gateway generates an opaque ID and persists a sanitized payment record.
-6. The handler returns the sanitized record. A later GET retrieves that same record.
+3. The gateway generates an opaque ID before submitting the valid request for bank authorization.
+4. Only a valid request is translated to the simulator request shape and sent using the request context.
+5. The bank client maps `authorized: true` to `Authorized` and `authorized: false` to `Declined`.
+6. For either completed outcome, the gateway atomically creates a sanitized payment record by ID. If that ID already exists, it generates a replacement ID and retries without overwriting the existing record.
+7. The handler returns the sanitized record. A later GET retrieves that same record.
 
 ## Validation Rules
 

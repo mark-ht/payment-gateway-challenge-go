@@ -35,10 +35,71 @@ func (f *fakeAuthorizer) Authorize(_ context.Context, _ models.PaymentRequest) (
 	return f.authorized, f.err
 }
 
+type authorizerFunc func(context.Context, models.PaymentRequest) (bool, error)
+
+func (f authorizerFunc) Authorize(ctx context.Context, request models.PaymentRequest) (bool, error) {
+	return f(ctx, request)
+}
+
+func TestPostPaymentHandlerGeneratesIDBeforeAuthorization(t *testing.T) {
+	store := repository.NewPaymentsRepository()
+	var calls []string
+	bank := authorizerFunc(func(context.Context, models.PaymentRequest) (bool, error) {
+		calls = append(calls, "authorize")
+		return true, nil
+	})
+	handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string {
+		calls = append(calls, "id")
+		return "payment-id"
+	})
+
+	recorder := httptest.NewRecorder()
+	handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123"}`)))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	if got, want := strings.Join(calls, ","), "id,authorize"; got != want {
+		t.Fatalf("call order = %q, want %q", got, want)
+	}
+}
+
+func TestPostPaymentHandlerRetriesIDCollisionWithoutOverwrite(t *testing.T) {
+	store := repository.NewPaymentsRepository()
+	existing := models.Payment{ID: "collision", Status: "Declined", Amount: 200}
+	if !store.Create(existing) {
+		t.Fatal("Create(existing) = false, want true")
+	}
+	ids := []string{"collision", "replacement"}
+	nextID := 0
+	handler := NewPaymentsHandler(store, &fakeAuthorizer{authorized: true}, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string {
+		id := ids[nextID]
+		nextID++
+		return id
+	})
+
+	recorder := httptest.NewRecorder()
+	handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123"}`)))
+
+	var payment models.Payment
+	if err := json.NewDecoder(recorder.Body).Decode(&payment); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK || payment.ID != "replacement" || nextID != 2 {
+		t.Fatalf("status/payment/id calls = %d/%+v/%d, want 200/replacement/2", recorder.Code, payment, nextID)
+	}
+	if got, found := store.Get(existing.ID); !found || got != existing {
+		t.Fatalf("existing payment = (%+v, %t), want (%+v, true)", got, found, existing)
+	}
+	if got, found := store.Get(payment.ID); !found || got != payment {
+		t.Fatalf("replacement payment = (%+v, %t), want (%+v, true)", got, found, payment)
+	}
+}
+
 func TestPostPaymentHandlerAuthorizesAndStoresOnlySafeFields(t *testing.T) {
 	store := repository.NewPaymentsRepository()
 	bank := &fakeAuthorizer{authorized: true}
-	handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() (string, error) { return "payment-id", nil })
+	handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
 
 	recorder := httptest.NewRecorder()
 	handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"gbp","amount":100,"cvv":"123"}`)))
@@ -82,7 +143,7 @@ func TestPostPaymentHandlerRejectsInvalidInputBeforeBankCall(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			store := repository.NewPaymentsRepository()
 			bank := &fakeAuthorizer{authorized: true}
-			handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() (string, error) { return "payment-id", nil })
+			handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
 			recorder := httptest.NewRecorder()
 			handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(test.body)))
 			if recorder.Code != http.StatusBadRequest || bank.calls != 0 || recorder.Body.String() != "{\"status\":\"Rejected\"}\n" {
@@ -92,20 +153,10 @@ func TestPostPaymentHandlerRejectsInvalidInputBeforeBankCall(t *testing.T) {
 	}
 }
 
-func TestPostPaymentHandlerDoesNotStoreWhenIDGenerationFails(t *testing.T) {
-	store := repository.NewPaymentsRepository()
-	handler := NewPaymentsHandler(store, &fakeAuthorizer{authorized: true}, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() (string, error) { return "", errors.New("random source failed") })
-	recorder := httptest.NewRecorder()
-	handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123"}`)))
-	if recorder.Code != http.StatusInternalServerError || recorder.Body.Len() != 0 {
-		t.Fatalf("status/body length = %d/%d", recorder.Code, recorder.Body.Len())
-	}
-}
-
 func TestPostPaymentHandlerDoesNotStoreBankFailures(t *testing.T) {
 	store := repository.NewPaymentsRepository()
 	bank := &fakeAuthorizer{err: errors.New("bank unavailable")}
-	handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() (string, error) { return "payment-id", nil })
+	handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
 	recorder := httptest.NewRecorder()
 	handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123"}`)))
 	if recorder.Code != http.StatusServiceUnavailable || recorder.Body.Len() != 0 {
@@ -119,7 +170,7 @@ func TestPostPaymentHandlerDoesNotStoreBankFailures(t *testing.T) {
 func TestPostPaymentHandlerReturnsDeclined(t *testing.T) {
 	store := repository.NewPaymentsRepository()
 	bank := &fakeAuthorizer{authorized: false}
-	handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() (string, error) { return "payment-id", nil })
+	handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
 	recorder := httptest.NewRecorder()
 	handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(`{"card_number":"00000000000002","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123"}`)))
 	var payment models.Payment
@@ -130,8 +181,8 @@ func TestPostPaymentHandlerReturnsDeclined(t *testing.T) {
 
 func TestGetPaymentHandler(t *testing.T) {
 	store := repository.NewPaymentsRepository()
-	store.Add(models.Payment{ID: "test-id", Status: "Authorized", CardNumberLastFour: "0001", ExpiryMonth: 10, ExpiryYear: 2035, Currency: "GBP", Amount: 100})
-	handler := NewPaymentsHandler(store, nil, func() time.Time { return time.Now().UTC() }, func() (string, error) { return "id", nil })
+	store.Create(models.Payment{ID: "test-id", Status: "Authorized", CardNumberLastFour: "0001", ExpiryMonth: 10, ExpiryYear: 2035, Currency: "GBP", Amount: 100})
+	handler := NewPaymentsHandler(store, nil, func() time.Time { return time.Now().UTC() }, func() string { return "id" })
 
 	router := chi.NewRouter()
 	router.Get("/api/payments/{id}", handler.GetHandler())
