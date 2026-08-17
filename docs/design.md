@@ -60,9 +60,9 @@ For an authorized or declined request, return `200 OK`:
 
 `status` is exactly `Authorized` or `Declined` for a completed payment. The simulator authorization code is not exposed.
 
-Invalid or malformed requests return `400 Bad Request` without contacting the bank or storing a payment. The JSON error representation contains `status: "Rejected"` and a safe error message.
+Invalid or malformed requests return `400 Bad Request` without contacting the bank or storing a payment. Its JSON representation contains `status: "Rejected"`.
 
-An unavailable, timed-out, malformed, or unexpected bank response returns `503 Service Unavailable`. It creates no payment record and must not expose internal error details.
+An unavailable, timed-out, malformed, or unexpected bank response returns `503 Service Unavailable`. It creates no payment record and must not expose internal error details or introduce a new payment-status value.
 
 ### Retrieve payment
 
@@ -70,11 +70,11 @@ An unavailable, timed-out, malformed, or unexpected bank response returns `503 S
 GET /api/payments/{id}
 ```
 
-A known ID returns `200 OK` and the same safe completed-payment representation. An unknown ID returns `404 Not Found`.
+A known ID returns `200 OK` and the same safe completed-payment representation. An unknown ID returns `404 Not Found`; it is not a payment-status value and has no additional public error-code contract.
 
 ## Payment Flow
 
-1. The handler decodes a bounded JSON request and rejects malformed input.
+1. The handler decodes exactly one JSON object, rejects malformed/non-object/trailing input, and ignores unknown fields without requiring a request `Content-Type` header. It does not impose an unquantified body-size limit.
 2. Validation normalizes the currency and validates every merchant field.
 3. Only a valid request is translated to the simulator request shape and sent using the request context.
 4. The bank client maps `authorized: true` to `Authorized` and `authorized: false` to `Declined`.
@@ -87,7 +87,7 @@ A known ID returns `200 OK` and the same safe completed-payment representation. 
 |---|---|
 | Card number | String containing only digits, 14–19 characters. |
 | Expiry month | Integer from 1 through 12. |
-| Expiry date | Strictly after the current month; a card expiring this month is invalid. |
+| Expiry date | Strictly after the current UTC month; a card expiring this month is invalid. Production uses `time.Now().UTC()` through an injected clock. |
 | Currency | Normalize to uppercase; accept only `GBP`, `USD`, or `EUR`. |
 | Amount | Integer greater than zero, in minor currency units. |
 | CVV | String containing only digits, 3–4 characters. |
