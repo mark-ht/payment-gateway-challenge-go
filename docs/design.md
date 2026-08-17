@@ -99,7 +99,7 @@ Keep the implementation small and testable:
 - **HTTP handler:** HTTP decoding/encoding, status selection, and request-context propagation.
 - **Validation:** merchant-request validation and normalization before any bank call.
 - **Bank client:** an interface-backed adapter that formats `expiry_date` as `MM/YYYY`, calls the simulator using a bounded HTTP timeout, refuses redirects, and maps its response.
-- **Repository:** concurrent-safe in-memory add/get operations over sanitized completed-payment records.
+- **Repository:** concurrent-safe in-memory create-if-absent/get operations over sanitized completed-payment records. Creation atomically rejects an existing ID rather than overwriting its completed payment.
 
 A separate service layer is optional, not required. Introduce it only if it makes these boundaries clearer.
 

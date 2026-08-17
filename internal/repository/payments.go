@@ -23,8 +23,19 @@ func (r *PaymentsRepository) Get(id string) (models.Payment, bool) {
 	return payment, found
 }
 
-func (r *PaymentsRepository) Add(payment models.Payment) {
+// Create stores payment only when its ID is not already present.
+func (r *PaymentsRepository) Create(payment models.Payment) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Refuse collisions atomically so a retry cannot overwrite a completed payment.
+	if _, exists := r.payments[payment.ID]; exists {
+		return false
+	}
 	r.payments[payment.ID] = payment
+	return true
+}
+
+// Add is retained for compatibility; new callers should use Create to detect collisions.
+func (r *PaymentsRepository) Add(payment models.Payment) {
+	r.Create(payment)
 }
