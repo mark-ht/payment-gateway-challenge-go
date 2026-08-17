@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -20,6 +21,8 @@ type Authorizer interface {
 
 type IDGenerator func() string
 type Clock func() time.Time
+
+const maxPaymentRequestBytes = 64 * 1024
 
 type PaymentsHandler struct {
 	storage    *repository.PaymentsRepository
@@ -61,19 +64,21 @@ func (h *PaymentsHandler) GetHandler() http.HandlerFunc {
 //	@Param		payment	body		models.PaymentRequest	true	"Payment request"
 //	@Success	200		{object}	models.Payment
 //	@Failure	400		{object}	rejectedResponse
+//	@Failure	413		{object}	rejectedResponse
 //	@Failure	503		"Bank unavailable"
 //	@Router		/api/payments [post]
 func (h *PaymentsHandler) PostHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Limit bodies before decoding to prevent oversized requests from exhausting gateway resources.
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPaymentRequestBytes))
 		var request models.PaymentRequest
-		decoder := json.NewDecoder(r.Body)
 		if err := decoder.Decode(&request); err != nil {
-			writeRejected(w)
+			writeRequestError(w, err)
 			return
 		}
 		var trailing any
 		if err := decoder.Decode(&trailing); err != io.EOF {
-			writeRejected(w)
+			writeRequestError(w, err)
 			return
 		}
 		request, valid := validatePaymentRequest(request, h.clock)
@@ -115,6 +120,15 @@ type rejectedResponse struct {
 
 func writeRejected(w http.ResponseWriter) {
 	writeJSON(w, http.StatusBadRequest, rejectedResponse{Status: "Rejected"})
+}
+
+func writeRequestError(w http.ResponseWriter, err error) {
+	var maxBytesError *http.MaxBytesError
+	if errors.As(err, &maxBytesError) {
+		writeJSON(w, http.StatusRequestEntityTooLarge, rejectedResponse{Status: "Rejected"})
+		return
+	}
+	writeRejected(w)
 }
 
 func validatePaymentRequest(request models.PaymentRequest, clock Clock) (models.PaymentRequest, bool) {

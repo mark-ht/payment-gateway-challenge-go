@@ -49,6 +49,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/handlers.rejectedResponse"
                         }
                     },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.rejectedResponse"
+                        }
+                    },
                     "503": {
                         "description": "Bank unavailable"
                     }

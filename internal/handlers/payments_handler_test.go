@@ -153,6 +153,23 @@ func TestPostPaymentHandlerRejectsInvalidInputBeforeBankCall(t *testing.T) {
 	}
 }
 
+func TestPostPaymentHandlerRejectsOversizedBodyBeforeBankCall(t *testing.T) {
+	store := repository.NewPaymentsRepository()
+	bank := &fakeAuthorizer{authorized: true}
+	handler := NewPaymentsHandler(store, bank, func() time.Time { return time.Date(2026, time.April, 15, 0, 0, 0, 0, time.UTC) }, func() string { return "payment-id" })
+	body := `{"card_number":"00000000000001","expiry_month":5,"expiry_year":2026,"currency":"GBP","amount":100,"cvv":"123","padding":"` + strings.Repeat("x", 64*1024) + `"}`
+
+	recorder := httptest.NewRecorder()
+	handler.PostHandler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/payments", strings.NewReader(body)))
+
+	if recorder.Code != http.StatusRequestEntityTooLarge || bank.calls != 0 || recorder.Body.String() != "{\"status\":\"Rejected\"}\n" {
+		t.Fatalf("status/calls/body = %d/%d/%q, want 413/0/rejected", recorder.Code, bank.calls, recorder.Body.String())
+	}
+	if _, found := store.Get("payment-id"); found {
+		t.Fatal("oversized request was stored")
+	}
+}
+
 func TestPostPaymentHandlerDoesNotStoreBankFailures(t *testing.T) {
 	store := repository.NewPaymentsRepository()
 	bank := &fakeAuthorizer{err: errors.New("bank unavailable")}
