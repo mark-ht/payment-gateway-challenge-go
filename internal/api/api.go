@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -15,6 +13,7 @@ import (
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/handlers"
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/repository"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -130,7 +129,6 @@ func newCorrelationID() string {
 }
 
 func newPaymentID() string {
-	bytes := make([]byte, 16)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+	// UUIDv7's time prefix keeps IDs sortable while its random bits preserve uniqueness.
+	return uuid.Must(uuid.NewV7()).String()
 }

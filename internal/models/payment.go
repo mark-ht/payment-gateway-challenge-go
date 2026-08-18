@@ -14,7 +14,8 @@ type PaymentRequest struct {
 
 // Payment contains only data that is safe to retain and return.
 type Payment struct {
-	ID                 string `json:"id"`
+	// ID is a canonical UUIDv7 payment identifier. Its timestamp prefix reveals an approximate creation time.
+	ID                 string `json:"id" format:"uuid"`
 	Status             string `json:"status" enums:"Authorized,Declined"`
 	CardNumberLastFour string `json:"card_number_last_four"`
 	ExpiryMonth        int    `json:"expiry_month"`

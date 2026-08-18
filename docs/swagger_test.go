@@ -20,6 +20,7 @@ type swaggerDefinition struct {
 type swaggerProperty struct {
 	Description string   `json:"description"`
 	Enum        []string `json:"enum"`
+	Format      string   `json:"format"`
 	Maximum     *float64 `json:"maximum"`
 	MaxLength   *int     `json:"maxLength"`
 	Minimum     *float64 `json:"minimum"`
@@ -45,6 +46,10 @@ func TestPaymentSchemasRetainSourceContractConstraints(t *testing.T) {
 	assertStringsEqual(t, "supported currencies", request.Properties["currency"].Enum, []string{"GBP", "USD", "EUR"})
 	assertProperty(t, request.Properties["amount"], swaggerProperty{Type: "integer", Minimum: floatPointer(1)})
 
+	paymentID := document.Definitions["models.Payment"].Properties["id"]
+	if paymentID.Type != "string" || paymentID.Format != "uuid" || !strings.Contains(paymentID.Description, "UUIDv7") {
+		t.Fatalf("payment ID schema = %+v, want UUIDv7 string in uuid format", paymentID)
+	}
 	assertStringsEqual(t, "completed payment statuses", document.Definitions["models.Payment"].Properties["status"].Enum, []string{"Authorized", "Declined"})
 	assertStringsEqual(t, "rejected payment statuses", document.Definitions["handlers.rejectedResponse"].Properties["status"].Enum, []string{"Rejected"})
 }

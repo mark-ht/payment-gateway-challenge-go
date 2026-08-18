@@ -71,7 +71,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Payment ID",
+                        "description": "Canonical UUIDv7 payment ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -206,7 +206,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "id": {
-                    "type": "string"
+                    "description": "ID is a canonical UUIDv7 payment identifier. Its timestamp prefix reveals an approximate creation time.",
+                    "type": "string",
+                    "format": "uuid"
                 },
                 "status": {
                     "type": "string",

@@ -29,6 +29,9 @@ definitions:
       expiry_year:
         type: integer
       id:
+        description: ID is a canonical UUIDv7 payment identifier. Its timestamp prefix
+          reveals an approximate creation time.
+        format: uuid
         type: string
       status:
         enum:
@@ -116,7 +119,7 @@ paths:
     get:
       description: A 404 response has no contractual error body.
       parameters:
-      - description: Payment ID
+      - description: Canonical UUIDv7 payment ID
         in: path
         name: id
         required: true

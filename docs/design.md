@@ -33,7 +33,7 @@ The in-memory repository is intentionally ephemeral: payment retrieval is limite
 - A valid bank decision is a completed payment: it is persisted and has status `Authorized` or `Declined`. Invalid merchant input is `Rejected` before a bank request; bank unavailability is not a payment outcome and is not persisted.
 - `400` represents invalid/malformed merchant input, `404` an unknown payment ID, and `503` an unavailable or unusable bank response.
 - Currency input is normalized to uppercase and restricted to `GBP`, `USD`, and `EUR`; the amount is a positive integer in minor units.
-- A payment ID is an opaque collision-resistant value generated before bank authorization. Completed payments are atomically created by ID; an existing ID is never overwritten and causes a fresh-ID retry. Only safe payment data is retained in the in-memory repository.
+- Payment IDs and server-generated access-log correlation IDs are canonical RFC 4122 UUIDv7 strings. UUIDv7's timestamp prefix makes them roughly time-sortable and its random component provides practical uniqueness; this intentionally discloses an approximate server-side creation time. Payment IDs are generated before bank authorization. Completed payments are atomically created by ID; an existing ID is never overwritten and causes a fresh-ID retry. Only safe payment data is retained in the in-memory repository.
 - The implementation remains deliberately small: handler, validation, bank-client, and repository responsibilities are separated only to make the required behaviour testable and maintainable.
 
 ## Public HTTP API
@@ -120,7 +120,7 @@ Dashboards define the service error rate as `5xx` responses divided by all obser
 
 1. The handler decodes exactly one JSON object, rejects malformed/non-object/trailing input, and ignores unknown fields without requiring a request `Content-Type` header. Merchant request bodies are limited to 64 KiB; an excess body is rejected before a bank call or persistence.
 2. Validation normalizes the currency and validates every merchant field.
-3. The gateway generates an opaque ID before submitting the valid request for bank authorization.
+3. The gateway generates a canonical UUIDv7 payment ID before submitting the valid request for bank authorization.
 4. Only a valid request is translated to the simulator request shape and sent using the request context.
 5. The bank client maps `authorized: true` to `Authorized` and `authorized: false` to `Declined`.
 6. For either completed outcome, the gateway atomically creates a sanitized payment record by ID. If that ID already exists, it generates a replacement ID and retries without overwriting the existing record.
@@ -199,7 +199,7 @@ The assessment keeps its local HTTP simulator default. In production, the config
 
 - Full PAN and CVV are strings only while validating and sending the simulator request.
 - Never persist, return, or log the full PAN or CVV.
-- Per-request access logs contain only an allow-listed standard HTTP method name (or the fixed `OTHER` marker), server-known matched route pattern, response status, elapsed duration, and a server-generated correlation ID. They never include raw method tokens, URIs/query strings, headers, bodies, card data, remote addresses, user agents, or client-supplied correlation IDs.
+- Per-request access logs contain only an allow-listed standard HTTP method name (or the fixed `OTHER` marker), server-known matched route pattern, response status, elapsed duration, and a server-generated UUIDv7 correlation ID. UUIDv7 intentionally reveals an approximate server-side request creation time; logs never include raw method tokens, URIs/query strings, headers, bodies, card data, remote addresses, user agents, or client-supplied correlation IDs.
 - Persist only payment ID, status, last four digits as a string, expiry month/year, normalized currency, and amount.
 - Do not return or persist the simulator authorization code without a new accepted decision.
 

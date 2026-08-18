@@ -3,12 +3,12 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +28,29 @@ func paymentRequestJSON(t *testing.T, cardNumber string) string {
 	return string(body)
 }
 
+func requireCanonicalUUIDv7(t *testing.T, value string) {
+	t.Helper()
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		t.Fatalf("UUID = %q, want canonical 8-4-4-4-12 form", value)
+	}
+
+	bytes, err := hex.DecodeString(strings.ReplaceAll(value, "-", ""))
+	if err != nil || len(bytes) != 16 {
+		t.Fatalf("UUID = %q, want 16 hexadecimal bytes", value)
+	}
+	if bytes[6]>>4 != 7 {
+		t.Fatalf("UUID version = %d, want 7", bytes[6]>>4)
+	}
+	if bytes[8]&0xc0 != 0x80 {
+		t.Fatalf("UUID variant = %02b, want RFC 4122", bytes[8]>>6)
+	}
+}
+
+func TestGeneratedIDsAreCanonicalUUIDv7(t *testing.T) {
+	requireCanonicalUUIDv7(t, newPaymentID())
+	requireCanonicalUUIDv7(t, newCorrelationID())
+}
+
 func TestAPIAccessLogIncludesOnlySafeOperationalFields(t *testing.T) {
 	var logs bytes.Buffer
 	gateway := &Api{accessLogger: log.New(&logs, "", 0)}
@@ -44,9 +67,14 @@ func TestAPIAccessLogIncludesOnlySafeOperationalFields(t *testing.T) {
 			t.Errorf("access log contains prohibited value %q: %q", sentinel, entry)
 		}
 	}
-	if !regexp.MustCompile(`^method=GET route=/ping status=200 duration=[0-9.]+(?:ns|µs|ms|s) correlation_id=[0-9a-f]{32}\n$`).MatchString(entry) {
-		t.Errorf("access log = %q, want only safe operational fields", entry)
+	fields := strings.Fields(strings.TrimSpace(entry))
+	if len(fields) != 5 || fields[0] != "method=GET" || fields[1] != "route=/ping" || fields[2] != "status=200" || !strings.HasPrefix(fields[3], "duration=") || !strings.HasPrefix(fields[4], "correlation_id=") {
+		t.Fatalf("access log = %q, want only safe operational fields", entry)
 	}
+	if _, err := time.ParseDuration(strings.TrimPrefix(fields[3], "duration=")); err != nil {
+		t.Fatalf("access log duration = %q: %v", fields[3], err)
+	}
+	requireCanonicalUUIDv7(t, strings.TrimPrefix(fields[4], "correlation_id="))
 }
 
 func TestAPIAccessLogDoesNotIncludeUnsupportedMethodToken(t *testing.T) {

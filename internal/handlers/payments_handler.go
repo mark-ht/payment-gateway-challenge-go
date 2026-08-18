@@ -40,7 +40,7 @@ func NewPaymentsHandler(storage *repository.PaymentsRepository, authorizer Autho
 //	@Summary	Retrieve a payment
 //	@Description	A 404 response has no contractual error body.
 //	@Produce	json
-//	@Param		id	path		string	true	"Payment ID"
+//	@Param		id	path		string	true	"Canonical UUIDv7 payment ID"
 //	@Success	200	{object}	models.Payment
 //	@Failure	404	"Payment not found"
 //	@Router		/api/payments/{id} [get]
