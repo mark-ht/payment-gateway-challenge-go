@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+# Keep temporary response files private even though the gateway response is sanitized.
 umask 077
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/payment-gateway-demo.XXXXXX")"
 cleanup() {
