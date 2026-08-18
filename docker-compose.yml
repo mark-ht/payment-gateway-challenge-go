@@ -21,6 +21,8 @@ services:
       start_period: 2s
 
   gateway:
+    ports:
+      - "127.0.0.1:8090:8090"
     build:
       context: .
       target: gateway

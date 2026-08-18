@@ -4,13 +4,14 @@ APP_DATE ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || printf '%s' unk
 
 export APP_VERSION APP_COMMIT APP_DATE
 
-.PHONY: help test e2e metadata-check
+.PHONY: help test e2e metadata-check dev-up dev-down fuzz
 
 help:
-	@printf '%s\n' 'Targets:' '  test            Run Go tests with aggregate statement coverage.' '  e2e             Run the Compose end-to-end smoke check with cleanup.' '  metadata-check  Verify explicit build metadata overrides in the gateway image.'
+	@printf '%s\n' 'Targets:' '  test            Run Go tests with aggregate statement coverage.' '  e2e             Run the Compose end-to-end smoke check with cleanup.' '  metadata-check  Verify explicit build metadata overrides in the gateway image.' '  dev-up          Build and start the localhost-only Compose demo.' '  dev-down        Remove Compose services and orphans.' '  fuzz            Run the deterministic synthetic-payment demo (not randomized fuzzing).'
 
 test:
 	@set -e; \
+	./test/demo/make-targets-check.sh; \
 	coverage_file=$$(mktemp "$${TMPDIR:-/tmp}/payment-gateway-coverage.XXXXXX"); \
 	trap 'rm -f "$$coverage_file"' EXIT HUP INT TERM; \
 	go test ./... -coverprofile="$$coverage_file"; \
@@ -26,3 +27,9 @@ e2e:
 
 metadata-check:
 	@./test/metadata/build-metadata.sh
+
+dev-up:
+	@docker compose up -d --build gateway
+
+dev-down:
+	@docker compose down --remove-orphans
