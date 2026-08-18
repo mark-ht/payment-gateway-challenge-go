@@ -12,6 +12,7 @@ help:
 test:
 	@set -e; \
 	./test/demo/make-targets-check.sh; \
+	./test/demo/fuzz-safety-check.sh; \
 	coverage_file=$$(mktemp "$${TMPDIR:-/tmp}/payment-gateway-coverage.XXXXXX"); \
 	trap 'rm -f "$$coverage_file"' EXIT HUP INT TERM; \
 	go test ./... -coverprofile="$$coverage_file"; \
@@ -33,3 +34,6 @@ dev-up:
 
 dev-down:
 	@docker compose down --remove-orphans
+
+fuzz: dev-up
+	@./test/demo/fuzz.sh

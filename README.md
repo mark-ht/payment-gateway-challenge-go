@@ -4,18 +4,35 @@ A Go 1.21 payment-gateway assessment. The API is documented by Swagger UI at `ht
 
 ## Local development
 
-Start only the simulator for a local gateway process:
+For the local Compose demonstration, build and start the gateway and simulator:
+
+```bash
+make dev-up
+```
+
+The gateway is published only on `127.0.0.1:8090` (including Swagger at `http://127.0.0.1:8090/swagger/index.html`); it is not publicly exposed. The simulator payment port is also loopback-only at `127.0.0.1:8080`, and its Mountebank admin port is not published. Remove the demonstration services and any Compose orphans when finished:
+
+```bash
+make dev-down
+```
+
+`make fuzz` is a deterministic demo smoke workflow, **not randomized fuzzing**. It starts the local stack, bounded-polls readiness, and submits only assessment-only synthetic payments with odd, non-zero even, and zero final digits. It checks `200 Authorized`, `200 Declined`, and `503` respectively, prints only status summaries and a bounded safe gateway-log snapshot, and never prints request bodies, PANs, or CVVs:
+
+```bash
+make fuzz
+make dev-down
+```
+
+Do not use this Compose demo or its synthetic fixture values with real payment data.
+
+To run the gateway process directly instead, start only the simulator and then run Go:
 
 ```bash
 docker compose up -d bank_simulator
 go run .
 ```
 
-The simulator payment port is loopback-only at `localhost:8080`; its Mountebank admin port is not published. Stop the local simulator when finished:
-
-```bash
-docker compose down
-```
+Use `make dev-down` to clean up the simulator afterwards.
 
 ## Build metadata
 
