@@ -19,21 +19,21 @@ test:
 	go tool cover -func="$$coverage_file"
 
 e2e:
-	@cleanup() { docker compose --profile e2e down --remove-orphans; }; \
+	@cleanup() { docker compose -f docker-compose.yml --profile e2e down --remove-orphans; }; \
 	trap cleanup EXIT; \
 	trap 'exit 129' HUP; \
 	trap 'exit 130' INT; \
 	trap 'exit 143' TERM; \
-	docker compose --profile e2e up --build --abort-on-container-exit --exit-code-from e2e
+	docker compose -f docker-compose.yml --profile e2e up --build --abort-on-container-exit --exit-code-from e2e
 
 metadata-check:
 	@./test/metadata/build-metadata.sh
 
 dev-up:
-	@docker compose up -d --build gateway
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build gateway
 
 dev-down:
-	@docker compose down --remove-orphans
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans
 
 fuzz: dev-up
 	@./test/demo/fuzz.sh

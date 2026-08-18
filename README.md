@@ -4,13 +4,13 @@ A Go 1.21 payment-gateway assessment. The API is documented by Swagger UI at `ht
 
 ## Local development
 
-For the local Compose demonstration, build and start the gateway and simulator:
+For the local Compose demonstration, `make dev-up` combines the base Compose file with the development-only `docker-compose.dev.yml` override, then builds and starts the gateway and simulator:
 
 ```bash
 make dev-up
 ```
 
-The gateway is published only on `127.0.0.1:8090` (including Swagger at `http://127.0.0.1:8090/swagger/index.html`); it is not publicly exposed. The simulator payment port is also loopback-only at `127.0.0.1:8080`, and its Mountebank admin port is not published. Remove the demonstration services and any Compose orphans when finished:
+The development override publishes the gateway only on `127.0.0.1:8090` (including Swagger at `http://127.0.0.1:8090/swagger/index.html`); it is not publicly exposed. `make dev-up` requires local port 8090 to be free and does not stop an existing listener. The simulator payment port is also loopback-only at `127.0.0.1:8080`, and its Mountebank admin port is not published. Remove the demonstration services and any Compose orphans when finished:
 
 ```bash
 make dev-down
@@ -85,4 +85,4 @@ make metadata-check \
   APP_DATE=2026-04-02T00:00:00Z
 ```
 
-The E2E runner waits for the gateway's internal `http://gateway:8090/readyz` endpoint with a bounded retry. It covers authorized and declined payment retrieval, malformed/trailing and oversized-request rejection, unavailable and unknown-payment handling, exact health/liveness probe responses, and safe bounded Prometheus metrics. It does not publish the gateway or Mountebank admin ports to the host.
+The E2E runner uses only the base Compose configuration and waits for the gateway's internal `http://gateway:8090/readyz` endpoint with a bounded retry. It covers authorized and declined payment retrieval, malformed/trailing and oversized-request rejection, unavailable and unknown-payment handling, exact health/liveness probe responses, and safe bounded Prometheus metrics. It does not publish the gateway or Mountebank admin ports to the host, so an unrelated local listener on port 8090 does not block `make e2e`.
