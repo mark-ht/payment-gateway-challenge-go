@@ -11,11 +11,29 @@ import (
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/api"
 )
 
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
-)
+type buildMetadata struct {
+	version string
+	commit  string
+	date    string
+}
+
+func resolveBuildMetadata(getenv func(string) string) buildMetadata {
+	metadata := buildMetadata{
+		version: getenv("APP_VERSION"),
+		commit:  getenv("APP_COMMIT"),
+		date:    getenv("APP_DATE"),
+	}
+	if metadata.version == "" {
+		metadata.version = "dev"
+	}
+	if metadata.commit == "" {
+		metadata.commit = "none"
+	}
+	if metadata.date == "" {
+		metadata.date = "unknown"
+	}
+	return metadata
+}
 
 //	@title			Payment Gateway Challenge Go
 //	@description	Interview challenge for building a Payment Gateway - Go version
@@ -25,8 +43,9 @@ var (
 
 // @securityDefinitions.basic	BasicAuth
 func main() {
-	fmt.Printf("version %s, commit %s, built at %s\n", version, commit, date)
-	docs.SwaggerInfo.Version = version
+	metadata := resolveBuildMetadata(os.Getenv)
+	fmt.Printf("version %s, commit %s, built at %s\n", metadata.version, metadata.commit, metadata.date)
+	docs.SwaggerInfo.Version = metadata.version
 
 	err := run()
 	if err != nil {
@@ -54,8 +73,11 @@ func run() error {
 		}
 	}()
 
-	api := api.New()
-	if err := api.Run(ctx, ":8090"); err != nil {
+	server, err := api.New()
+	if err != nil {
+		return err
+	}
+	if err := server.Run(ctx, ":8090"); err != nil {
 		return err
 	}
 

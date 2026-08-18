@@ -1,25 +1,194 @@
 basePath: /
 definitions:
-  main.Pong:
+  api.probeStatus:
     properties:
-      message:
+      status:
         type: string
     type: object
-host: localhost:8089
+  handlers.rejectedResponse:
+    properties:
+      status:
+        enum:
+        - Rejected
+        type: string
+    type: object
+  models.Payment:
+    properties:
+      amount:
+        type: integer
+      card_number_last_four:
+        type: string
+      currency:
+        enum:
+        - GBP
+        - USD
+        - EUR
+        type: string
+      expiry_month:
+        type: integer
+      expiry_year:
+        type: integer
+      id:
+        description: ID is a canonical UUIDv7 payment identifier. Its timestamp prefix
+          reveals an approximate creation time.
+        format: uuid
+        type: string
+      status:
+        enum:
+        - Authorized
+        - Declined
+        type: string
+    type: object
+  models.PaymentRequest:
+    properties:
+      amount:
+        minimum: 1
+        type: integer
+      card_number:
+        maxLength: 19
+        minLength: 14
+        type: string
+        x-pattern: ^[0-9]+$
+      currency:
+        description: Currency uses canonical supported values; input is normalized
+          to uppercase before validation.
+        enum:
+        - GBP
+        - USD
+        - EUR
+        type: string
+      cvv:
+        maxLength: 4
+        minLength: 3
+        type: string
+        x-pattern: ^[0-9]+$
+      expiry_month:
+        description: ExpiryMonth must be from 1 through 12 and, with ExpiryYear, be
+          strictly after the current UTC month.
+        maximum: 12
+        minimum: 1
+        type: integer
+      expiry_year:
+        type: integer
+    required:
+    - amount
+    - card_number
+    - currency
+    - cvv
+    - expiry_month
+    - expiry_year
+    type: object
+host: localhost:8090
 info:
   contact: {}
   description: Interview challenge for building a Payment Gateway - Go version
   title: Payment Gateway Challenge Go
 paths:
-  /ping:
-    get:
+  /api/payments:
+    post:
+      consumes:
+      - application/json
+      description: Content-Type is not required. Unknown JSON properties are ignored.
+        A 503 response has no contractual error body.
+      parameters:
+      - description: Payment request
+        in: body
+        name: payment
+        required: true
+        schema:
+          $ref: '#/definitions/models.PaymentRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.Pong'
+            $ref: '#/definitions/models.Payment'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.rejectedResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.rejectedResponse'
+        "503":
+          description: Bank unavailable
+      summary: Process a payment
+  /api/payments/{id}:
+    get:
+      description: A 404 response has no contractual error body.
+      parameters:
+      - description: Canonical UUIDv7 payment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Payment'
+        "404":
+          description: Payment not found
+      summary: Retrieve a payment
+  /healthz:
+    get:
+      description: Makes local dependency checks only and never calls the bank. This
+        process serves it unauthenticated; production ingress and network policy must
+        prevent public access and permit only Kubernetes probe traffic.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.probeStatus'
+      summary: Gateway health probe
+  /livez:
+    get:
+      description: Makes local dependency checks only and never calls the bank. This
+        process serves it unauthenticated; production ingress and network policy must
+        prevent public access and permit only Kubernetes probe traffic.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.probeStatus'
+      summary: Gateway liveness probe
+  /metrics:
+    get:
+      description: Prometheus text exposition served unauthenticated by this process.
+        Production ingress and network policy must enforce private Prometheus-only
+        scraping rather than public access. It excludes /metrics from HTTP request
+        metrics.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Gateway Prometheus metrics
+  /readyz:
+    get:
+      description: Makes local dependency checks only and never calls the bank. This
+        process serves it unauthenticated; production ingress and network policy must
+        prevent public access and permit only Kubernetes probe traffic.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.probeStatus'
+        "503":
+          description: Gateway not ready
+      summary: Gateway readiness probe
 securityDefinitions:
   BasicAuth:
     type: basic

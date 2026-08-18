@@ -1,0 +1,26 @@
+{
+  "authorized": {
+    "card_number": "2222405343248877",
+    "expiry_month": 4,
+    "expiry_year": 2030,
+    "currency": "GBP",
+    "amount": 100,
+    "cvv": "123"
+  },
+  "declined": {
+    "card_number": "2222405343248878",
+    "expiry_month": 4,
+    "expiry_year": 2030,
+    "currency": "GBP",
+    "amount": 100,
+    "cvv": "123"
+  },
+  "unavailable": {
+    "card_number": "2222405343248870",
+    "expiry_month": 4,
+    "expiry_year": 2030,
+    "currency": "GBP",
+    "amount": 100,
+    "cvv": "123"
+  }
+}

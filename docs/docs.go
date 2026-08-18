@@ -15,28 +15,254 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/ping": {
-            "get": {
+        "/api/payments": {
+            "post": {
+                "description": "Content-Type is not required. Unknown JSON properties are ignored. A 503 response has no contractual error body.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
+                ],
+                "summary": "Process a payment",
+                "parameters": [
+                    {
+                        "description": "Payment request",
+                        "name": "payment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.PaymentRequest"
+                        }
+                    }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.Pong"
+                            "$ref": "#/definitions/models.Payment"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.rejectedResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.rejectedResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Bank unavailable"
+                    }
+                }
+            }
+        },
+        "/api/payments/{id}": {
+            "get": {
+                "description": "A 404 response has no contractual error body.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Retrieve a payment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Canonical UUIDv7 payment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Payment"
+                        }
+                    },
+                    "404": {
+                        "description": "Payment not found"
+                    }
+                }
+            }
+        },
+        "/healthz": {
+            "get": {
+                "description": "Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Gateway health probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.probeStatus"
+                        }
+                    }
+                }
+            }
+        },
+        "/livez": {
+            "get": {
+                "description": "Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Gateway liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.probeStatus"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "description": "Prometheus text exposition served unauthenticated by this process. Production ingress and network policy must enforce private Prometheus-only scraping rather than public access. It excludes /metrics from HTTP request metrics.",
+                "produces": [
+                    "text/plain"
+                ],
+                "summary": "Gateway Prometheus metrics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/readyz": {
+            "get": {
+                "description": "Makes local dependency checks only and never calls the bank. This process serves it unauthenticated; production ingress and network policy must prevent public access and permit only Kubernetes probe traffic.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Gateway readiness probe",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.probeStatus"
+                        }
+                    },
+                    "503": {
+                        "description": "Gateway not ready"
                     }
                 }
             }
         }
     },
     "definitions": {
-        "main.Pong": {
+        "api.probeStatus": {
             "type": "object",
             "properties": {
-                "message": {
+                "status": {
                     "type": "string"
+                }
+            }
+        },
+        "handlers.rejectedResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "Rejected"
+                    ]
+                }
+            }
+        },
+        "models.Payment": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "card_number_last_four": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string",
+                    "enum": [
+                        "GBP",
+                        "USD",
+                        "EUR"
+                    ]
+                },
+                "expiry_month": {
+                    "type": "integer"
+                },
+                "expiry_year": {
+                    "type": "integer"
+                },
+                "id": {
+                    "description": "ID is a canonical UUIDv7 payment identifier. Its timestamp prefix reveals an approximate creation time.",
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "Authorized",
+                        "Declined"
+                    ]
+                }
+            }
+        },
+        "models.PaymentRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "card_number",
+                "currency",
+                "cvv",
+                "expiry_month",
+                "expiry_year"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "card_number": {
+                    "type": "string",
+                    "maxLength": 19,
+                    "minLength": 14,
+                    "x-pattern": "^[0-9]+$"
+                },
+                "currency": {
+                    "description": "Currency uses canonical supported values; input is normalized to uppercase before validation.",
+                    "type": "string",
+                    "enum": [
+                        "GBP",
+                        "USD",
+                        "EUR"
+                    ]
+                },
+                "cvv": {
+                    "type": "string",
+                    "maxLength": 4,
+                    "minLength": 3,
+                    "x-pattern": "^[0-9]+$"
+                },
+                "expiry_month": {
+                    "description": "ExpiryMonth must be from 1 through 12 and, with ExpiryYear, be strictly after the current UTC month.",
+                    "type": "integer",
+                    "maximum": 12,
+                    "minimum": 1
+                },
+                "expiry_year": {
+                    "type": "integer"
                 }
             }
         }

@@ -3,26 +3,44 @@ package api
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"os"
+	"time"
 
+	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/bank"
+	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/handlers"
 	"github.com/cko-recruitment/payment-gateway-challenge-go/internal/repository"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
 type Api struct {
 	router       *chi.Mux
-	paymentsRepo *repository.PaymentsRepository
+	payments     *handlers.PaymentsHandler
+	accessLogger *log.Logger
+	metrics      *httpMetrics
+	ready        bool
+	serverRunner func(*http.Server) error
 }
 
-func New() *Api {
-	a := &Api{}
-	a.paymentsRepo = repository.NewPaymentsRepository()
-	a.setupRouter()
-
-	return a
+func New() (*Api, error) {
+	config, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	store := repository.NewPaymentsRepository()
+	authorizer := bank.NewClient(config.bankURL, config.bankTimeout)
+	api := &Api{
+		payments:     handlers.NewPaymentsHandler(store, authorizer, func() time.Time { return time.Now().UTC() }, newPaymentID),
+		accessLogger: log.New(os.Stderr, "", 0),
+		metrics:      newHTTPMetrics(),
+		serverRunner: (*http.Server).ListenAndServe,
+	}
+	api.setupRouter()
+	return api, nil
 }
 
 func (a *Api) Run(ctx context.Context, addr string) error {
@@ -32,33 +50,85 @@ func (a *Api) Run(ctx context.Context, addr string) error {
 		BaseContext: func(_ net.Listener) context.Context { return ctx },
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
+	runServer := a.serverRunner
+	if runServer == nil {
+		runServer = (*http.Server).ListenAndServe
+	}
 
+	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		<-ctx.Done()
-		fmt.Printf("shutting down HTTP server\n")
 		return httpServer.Shutdown(ctx)
 	})
-
 	g.Go(func() error {
 		fmt.Printf("starting HTTP server on %s\n", addr)
-		err := httpServer.ListenAndServe()
+		err := runServer(httpServer)
 		if err != nil && err != http.ErrServerClosed {
 			return err
 		}
-
 		return nil
 	})
-
 	return g.Wait()
 }
 
 func (a *Api) setupRouter() {
+	if a.accessLogger == nil {
+		a.accessLogger = log.New(os.Stderr, "", 0)
+	}
+	if a.metrics == nil {
+		a.metrics = newHTTPMetrics()
+	}
 	a.router = chi.NewRouter()
-	a.router.Use(middleware.Logger)
-
+	a.router.Use(a.accessLog)
+	a.router.Use(a.metrics.instrument)
+	a.router.Get("/metrics", a.MetricsHandler())
 	a.router.Get("/ping", a.PingHandler())
+	a.router.Get("/healthz", a.HealthHandler())
+	a.router.Get("/livez", a.LivenessHandler())
+	a.router.Get("/readyz", a.ReadinessHandler())
 	a.router.Get("/swagger/*", a.SwaggerHandler())
+	a.router.Post("/api/payments", a.payments.PostHandler())
+	a.router.Get("/api/payments/{id}", a.payments.GetHandler())
+	a.ready = true
+}
 
-	a.router.Get("/api/payments/{id}", a.GetPaymentHandler())
+func (a *Api) accessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		correlationID := newCorrelationID()
+		response := &statusResponseWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(response, r)
+
+		// Log only selected server-derived fields so request data cannot expose payment details.
+		a.accessLogger.Printf("method=%s route=%s status=%d duration=%s correlation_id=%s", safeMethod(r.Method), chi.RouteContext(r.Context()).RoutePattern(), response.status, time.Since(start), correlationID)
+	})
+}
+
+func safeMethod(method string) string {
+	switch method {
+	case http.MethodConnect, http.MethodDelete, http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPatch, http.MethodPost, http.MethodPut, http.MethodTrace:
+		return method
+	default:
+		// Method tokens are client-controlled, so unknown values must not enter access logs.
+		return "OTHER"
+	}
+}
+
+type statusResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func newCorrelationID() string {
+	return newPaymentID()
+}
+
+func newPaymentID() string {
+	// UUIDv7's time prefix keeps IDs sortable while its random bits preserve uniqueness.
+	return uuid.Must(uuid.NewV7()).String()
 }
